@@ -3,6 +3,11 @@ schemaVersion: 2.0.0
 metadataTest:
   user: ragnarsec
   workdir: /usr/share/grafana
+  envVars:
+    - key: GF_PATHS_PLUGINS
+      value: /var/lib/grafana/plugins
+    - key: GF_PLUGINS_PREINSTALL_DISABLED
+      value: 'true'
 
 fileExistenceTests:
   - name: 'Grafana Binary'
@@ -11,6 +16,11 @@ fileExistenceTests:
   - name: 'Grafana Config'
     path: '/etc/grafana.ini'
     shouldExist: true
+  - name: 'Plugin Directory'
+    path: '/var/lib/grafana/plugins'
+    shouldExist: true
+    uid: 1000
+    gid: 1000
 
 commandTests:
   - name: 'Grafana Version'
