@@ -28,9 +28,11 @@ RUN apk upgrade --no-cache && \
     && mkdir -p /run/clamav /var/lib/clamav /var/log/clamav \
     && chown -R clamav:clamav /run/clamav /var/lib/clamav /var/log/clamav
 
-# Initial DB update (optional, increases build time/size but ensures readiness)
-# User running this might want Freshclam sidecar pattern instead.
-# For now, let's just ensure directories exist.
+# The entrypoint initializes the signature database on first start when it is
+# absent. This keeps the build reproducible and lets consumers mount a persistent
+# database volume instead of baking signatures into the image.
+COPY entrypoint.sh /usr/local/bin/clamav-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/clamav-entrypoint.sh
 
 # Configure ClamAV (basic hardening)
 # Disable remote commands if not needed, use local socket.
@@ -45,4 +47,4 @@ WORKDIR /var/lib/clamav
 USER clamav
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["clamd"]
+CMD ["/usr/local/bin/clamav-entrypoint.sh"]
