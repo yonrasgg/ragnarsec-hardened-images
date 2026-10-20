@@ -2,13 +2,15 @@
 
 ## Purpose
 
-Infrastructure-as-code validation and authoring tools.
+Infrastructure-as-code validation and authoring tools. The image uses OpenTofu as
+the Terraform-compatible engine and exposes a `terraform` compatibility symlink.
 
 This document describes an image interface, not a deployed system.
 
 ## Build inputs
 
 - Declared `FROM`: `ghcr.io/yonrasgg/ragnarsec-python-base:${BASE_TAG}`.
+- OpenTofu, TFLint, OPA and Conftest come from pinned upstream releases verified by SHA256.
 
 Read the Dockerfile for exact build arguments, package choices and download locations.
 A tag is not immutable: resolve and review digests for a release. Availability and
@@ -37,7 +39,7 @@ time-bounded exceptions. A successful package upgrade does not prove all CVEs ar
 | Publication boundary and secret scanning | Repository guard, hooks and CI definitions; require a successful run for the release commit. |
 | Image test definitions | `../tests/ragnarsec-iac.yaml`; execution not evidenced by this documentation. |
 
-Defined test cases: `Terraform Version`, `TFLint Version`, `Checkov Version`, `OPA Version`, `Terraform Binary`, `TFLint Binary`, `Checkov Binary`, `Conftest Binary`, `OPA Binary`.
+Defined test cases: `OpenTofu Version`, `Terraform Compatibility Version`, `TFLint Version`, `Checkov Version`, `OPA Version`, `OpenTofu Binary`, `Terraform Compatibility Link`, `TFLint Binary`, `Checkov Binary`, `Conftest Binary`, `OPA Binary`.
 
 No built-image pass, SBOM, signature, multi-architecture result or runtime smoke-test
 receipt is attached to this documentation update. Do not treat the catalog as an approval.

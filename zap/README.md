@@ -9,6 +9,7 @@ This document describes an image interface, not a deployed system.
 ## Build inputs
 
 - Declared `FROM`: `ghcr.io/yonrasgg/ragnarsec-base:${BASE_TAG}`.
+- ZAP 2.17.0 is the upstream Linux x86_64 archive, verified by SHA256; other target architectures are rejected.
 
 Read the Dockerfile for exact build arguments, package choices and download locations.
 A tag is not immutable: resolve and review digests for a release. Availability and
