@@ -45,6 +45,9 @@ RUN if [ "${TARGETARCH:-amd64}" != "amd64" ]; then \
     rm -f /tmp/zap.tar.gz /tmp/zap.tar.gz.sha256 && \
     chown -R ragnarsec:ragnarsec /zap
 
+COPY entrypoint.sh /usr/local/bin/zap-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/zap-entrypoint.sh
+
 # Set up ZAP environment
 ENV ZAP_PATH=/zap/zap.sh
 ENV PATH=$PATH:/zap
@@ -52,4 +55,7 @@ ENV PATH=$PATH:/zap
 USER ragnarsec
 WORKDIR /zap
 
-CMD ["zap.sh", "-daemon", "-host", "0.0.0.0", "-port", "8080", "-config", "api.disablekey=true"]
+EXPOSE 8080
+
+# The entrypoint requires ZAP_API_KEY and never disables API key checks.
+CMD ["/usr/local/bin/zap-entrypoint.sh"]
