@@ -2,7 +2,7 @@ schemaVersion: 2.0.0
 
 metadataTest:
   user: ragnarsec
-  workdir: /home/ragnarsec
+  workdir: /zap
   envVars:
     - key: ZAP_PATH
       value: /zap/zap.sh

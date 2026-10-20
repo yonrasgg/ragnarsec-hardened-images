@@ -9,6 +9,7 @@ This document describes an image interface, not a deployed system.
 ## Build inputs
 
 - Declared `FROM`: `ghcr.io/yonrasgg/ragnarsec-base:${BASE_TAG}`.
+- Trivy comes from the pinned upstream release and is verified by SHA256.
 
 Read the Dockerfile for exact build arguments, package choices and download locations.
 A tag is not immutable: resolve and review digests for a release. Availability and

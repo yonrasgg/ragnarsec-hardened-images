@@ -27,8 +27,9 @@ patching process, usage contract and the status of validation evidence.
 - [valkey](valkey/README.md): Valkey key-value runtime.
 - [zap](zap/README.md): Web application security testing tooling; targets require authorization.
 
-Additional component recipes under `plane/` are defined by their Dockerfiles and
-matching structure-test files. Catalog inclusion does not identify a deployed service.
+Plane component recipes are temporarily quarantined while their upstream build inputs
+are revalidated. They are not part of the catalog, CI choices or published images.
+Catalog inclusion does not identify a deployed service.
 
 ## Controls and validation
 
