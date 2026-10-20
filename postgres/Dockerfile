@@ -10,10 +10,10 @@ ARG VERSION=dev
 
 # NOTE: GPL-3.0 applies to this wrapper (Dockerfile, configs, scripts) only.
 # PostgreSQL itself remains under the PostgreSQL License (permissive, similar to MIT/BSD).
-LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-images" \
+LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-hardened-images" \
       org.opencontainers.image.description="Hardened Postgres 15 Wrapper" \
       org.opencontainers.image.licenses="GPL-3.0" \
-      org.opencontainers.image.url="https://github.com/yonrasgg/ragnarsec-images/tree/main/postgres" \
+      org.opencontainers.image.url="https://github.com/yonrasgg/ragnarsec-hardened-images/tree/main/postgres" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
