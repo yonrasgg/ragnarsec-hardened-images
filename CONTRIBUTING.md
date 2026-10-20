@@ -20,8 +20,8 @@ Long-lived branches:
 
 | Branch | Purpose | Accepts | Publishes |
 |---|---|---|---|
-| `main` | Repository default and release | fast-forward from `staging` only | yes, with `PUBLISH` and approval |
-| `staging` | Full validation and human review | fast-forward from `development` only | no |
+| `main` | Repository default and release | pull request from `staging` only | yes, with `PUBLISH` and approval |
+| `staging` | Full validation and human review | pull request from `development` only | no |
 | `development` | Integration | short-lived branches by pull request | no |
 
 The order is fixed: `development` -> `staging` -> `main`. It is never skipped,

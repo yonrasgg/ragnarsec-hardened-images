@@ -53,6 +53,9 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('`development` -> `staging` -> `main`', text)
         self.assertIn('never skipped', text)
         self.assertIn('closed unmerged and returned to the sender', text)
+        self.assertIn('Squash, fast-forward or rebase', text)
+        self.assertNotIn('fast-forward from `staging` only', text)
+        self.assertNotIn('fast-forward from `development` only', text)
         readme = ' '.join((ROOT / 'README.md').read_text().split())
         self.assertIn('`main` is the repository default branch', readme)
 
