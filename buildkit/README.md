@@ -38,7 +38,7 @@ time-bounded exceptions. A successful package upgrade does not prove all CVEs ar
 | Publication boundary and secret scanning | Repository guard, hooks and CI definitions; require a successful run for the release commit. |
 | Image test definitions | `../tests/ragnarsec-buildkit.yaml`; execution not evidenced by this documentation. |
 
-Defined test cases: `BuildKit Version`, `BuildKit Client Version`, `Entrypoint Syntax`, `BuildKit Daemon`, `BuildKit Client`, `Runc`, `Rootless Entrypoint`.
+Defined test cases: `BuildKit Version`, `BuildKit Client Version`, `Entrypoint Syntax`, `BuildKit Daemon`, `BuildKit Client`, `Runc`, `Rootless Entrypoint`, `Shared Runtime Directory`.
 
 No built-image pass, SBOM, signature, multi-architecture result or runtime smoke-test
 receipt is attached to this documentation update. Do not treat the catalog as an approval.
@@ -49,8 +49,13 @@ The daemon runs as `ragnarsec` inside a RootlessKit user and network namespace.
 The container runtime must permit user namespaces, mounts and the `/dev/net/tun`
 and `/dev/fuse` devices required by that setup. In Docker this may require
 `--privileged` or an equivalent reviewed combination of capabilities, devices and
-seccomp settings; grant only what the deployment actually needs and do not expose
-the BuildKit socket outside the trusted workload.
+seccomp settings; grant only what the deployment actually needs.
+
+The daemon listens on `unix:///run/user/1000/buildkit/buildkitd.sock`. The image
+sets `XDG_RUNTIME_DIR=/run/user/1000` and `BUILDKIT_HOST` to that address, so a
+`buildctl` process in the same container reaches the daemon by default. `/run` is
+not copied into RootlessKit's private namespace. Do not expose the socket outside
+the trusted workload.
 
 ## Using the image
 
@@ -59,6 +64,9 @@ A local build example (does not publish or deploy):
 ```sh
 docker build -f buildkit/Dockerfile -t example/buildkit:review buildkit/
 ```
+
+With the daemon container running, `docker exec <container> buildctl version`
+uses the image's `BUILDKIT_HOST` and shared socket path.
 
 Images named in `FROM` must be available to the builder. Inspect build arguments before use.
 Provide credentials and environment-specific settings at runtime using the consumer's
