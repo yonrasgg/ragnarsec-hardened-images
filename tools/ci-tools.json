@@ -1,0 +1,29 @@
+{
+  "container-structure-test": {
+    "version": "v1.22.1",
+    "url": "https://github.com/GoogleContainerTools/container-structure-test/releases/download/v1.22.1/container-structure-test-linux-amd64",
+    "sha256": "fa35e89512a8978585f76cf41397956d2e3a30c62c2ad3fb857b1597074d14ca"
+  },
+  "trivy": {
+    "version": "v0.76.0",
+    "url": "https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_Linux-64bit.tar.gz",
+    "sha256": "e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7",
+    "member": "trivy"
+  },
+  "hadolint": {
+    "version": "v2.15.1",
+    "url": "https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64",
+    "sha256": "c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507"
+  },
+  "cosign": {
+    "version": "v3.1.3",
+    "url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64",
+    "sha256": "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+  },
+  "gitleaks": {
+    "version": "v8.30.1",
+    "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz",
+    "sha256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb",
+    "member": "gitleaks"
+  }
+}

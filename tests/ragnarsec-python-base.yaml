@@ -1,0 +1,38 @@
+schemaVersion: 2.0.0
+metadataTest:
+  user: ragnarsec
+  workdir: /app
+  envVars:
+    - key: VIRTUAL_ENV
+      value: /app/venv
+    - key: PIP_NO_CACHE_DIR
+      value: "1"
+    - key: PYTHONDONTWRITEBYTECODE
+      value: "1"
+    - key: PYTHONUNBUFFERED
+      value: "1"
+commandTests:
+  - name: 'Python Version'
+    command: 'python3'
+    args: ['--version']
+    expectedOutput: ['Python 3']
+  - name: 'Pip Version'
+    command: 'pip'
+    args: ['--version']
+    exitCode: 0
+  - name: 'SSL Module Available'
+    command: 'python3'
+    args: ['-c', 'import ssl; print(ssl.OPENSSL_VERSION)']
+    exitCode: 0
+  - name: 'Venv Python Symlink'
+    command: 'python'
+    args: ['--version']
+    expectedOutput: ['Python 3']
+    exitCode: 0
+fileExistenceTests:
+  - name: 'Venv Activation'
+    path: '/app/venv/bin/activate'
+    shouldExist: true
+  - name: 'Python Symlink'
+    path: '/usr/bin/python'
+    shouldExist: true

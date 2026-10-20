@@ -1,0 +1,17 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /data
+
+fileExistenceTests:
+  - name: 'MinIO Binary'
+    path: '/usr/bin/minio'
+    shouldExist: true
+
+commandTests:
+  - name: 'MinIO Version'
+    command: 'minio'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['minio version']

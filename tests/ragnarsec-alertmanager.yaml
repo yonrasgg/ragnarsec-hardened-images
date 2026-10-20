@@ -1,0 +1,20 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /var/lib/alertmanager
+
+fileExistenceTests:
+  - name: 'Alertmanager Binary'
+    path: '/usr/bin/alertmanager'
+    shouldExist: true
+  - name: 'Alertmanager Config'
+    path: '/etc/alertmanager/alertmanager.yml'
+    shouldExist: true
+
+commandTests:
+  - name: 'Alertmanager Version'
+    command: 'alertmanager'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['alertmanager']

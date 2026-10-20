@@ -1,0 +1,17 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: rabbitmq
+  workdir: /var/lib/rabbitmq
+  
+fileExistenceTests:
+  - name: 'RabbitMQ Server Binary'
+    path: '/usr/lib/rabbitmq/bin/rabbitmq-server'
+    shouldExist: true
+
+commandTests:
+  - name: 'RabbitMQ Version Check'
+    command: 'rabbitmqctl'
+    args: ['version']
+    exitCode: 0
+
