@@ -52,16 +52,26 @@ RUN case "${TARGETARCH:-amd64}" in \
     buildkitd --version && \
     buildctl --version
 
-# Prepare the subordinate ID ranges, state directory and rootless entrypoint.
+# Prepare the subordinate ID ranges, shared runtime directory, state directory
+# and rootless entrypoint. The daemon socket must live outside RootlessKit's
+# private /run copy so clients in the container namespace can reach it.
 COPY entrypoint.sh /usr/local/bin/buildkit-entrypoint.sh
-RUN mkdir -p /home/ragnarsec/.local/share/buildkit && \
+RUN mkdir -p /run/user/1000 /home/ragnarsec/.local/share/buildkit && \
     printf 'ragnarsec:100000:65536\n' >> /etc/subuid && \
     printf 'ragnarsec:100000:65536\n' >> /etc/subgid && \
     chmod 0755 /usr/local/bin/buildkit-entrypoint.sh && \
-    chown -R ragnarsec:ragnarsec /home/ragnarsec/.local
+    chown -R ragnarsec:ragnarsec /run/user/1000 /home/ragnarsec/.local && \
+    chmod 0700 /run/user/1000
 
 USER ragnarsec
 WORKDIR /home/ragnarsec
+
+# Match the upstream rootless image: identify the runtime user and use a shared
+# runtime directory so buildkitd and buildctl agree on the socket path.
+ENV HOME=/home/ragnarsec \
+    USER=ragnarsec \
+    XDG_RUNTIME_DIR=/run/user/1000 \
+    BUILDKIT_HOST=unix:///run/user/1000/buildkit/buildkitd.sock
 
 # Start the daemon inside a RootlessKit user namespace.
 CMD ["/usr/local/bin/buildkit-entrypoint.sh"]
