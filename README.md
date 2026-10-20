@@ -65,8 +65,8 @@ contract checks, a pinned secret scan of the tree and history, and the
 selected-image plan/validation; it writes to a registry only when `PUBLISH` is
 enabled on `main` and the approval step is accepted. Rulesets, credentials, agent
 labels and the required status check are Jenkins/GitHub configuration and are not
-asserted by this repository. Promotions may be squashed, fast-forwarded or
-rebased, but never merged with a merge commit.
+asserted by this repository. Promotions must be fast-forwarded or rebased,
+never squashed or merged with a merge commit.
 
 ## Contributions and patches
 

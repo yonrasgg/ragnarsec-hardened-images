@@ -38,12 +38,16 @@ Promotion is linear:
 1. Pull request to `development`: contract tests, secret scan and image plan;
    squash merge. GitHub creates and signs the squash commit.
 2. Pull request `development` -> `staging`: full image validation (build, scan,
-   SBOM and signature verification) and human review. Squash, fast-forward or
-   rebase; no merge commit and no publication.
+   SBOM and signature verification) and human review. Fast-forward or rebase;
+   no merge commit and no publication.
 3. Pull request `staging` -> `main`: only for a commit already validated in
-   `staging`; full validation runs again, then human approval, squash,
-   fast-forward or rebase, signed tag `vX.Y.Z`, and only then publication with
-   `PUBLISH` and the Jenkins approval step.
+   `staging`; full validation runs again, then human approval, fast-forward or
+   rebase, signed tag `vX.Y.Z`, and only then publication with `PUBLISH` and
+   the Jenkins approval step.
+
+Do not squash a promotion: it replaces the reviewed commits with a new commit
+whose ancestry no longer contains `development`, so the next promotion cannot
+apply cleanly. Squash is reserved for feature pull requests into `development`.
 
 A promotion that fails any required check is closed unmerged and returned to the
 sender for correction in `development`. This applies to human and AI-agent
@@ -53,11 +57,10 @@ check is waived to preserve the schedule. A corrected change repeats the full
 
 Jenkins rejects a `staging` build whose commit is not traceable to
 `development`, and a `main` build whose commit is not traceable to `staging`.
-A rewritten promotion (squash or rebase) is accepted when its exact tree
-already exists in the lower branch. Merge commits are disabled in repository
-settings. Direct pushes, force pushes and branch deletion are blocked on the
-three long-lived branches; `staging` and `main` additionally require signed
-commits.
+A rebased promotion is accepted when its exact tree already exists in the lower
+branch. Merge commits are disabled in repository settings. Direct pushes, force
+pushes and branch deletion are blocked on the three long-lived branches;
+`staging` and `main` additionally require signed commits.
 
 `development` accepts unsigned commits from short-lived branches, but only
 through a pull request; the squash commit is created and signed by GitHub.
