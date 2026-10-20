@@ -20,7 +20,7 @@ ci, install = load('image_ci'), load('install_ci_tools')
 class ImagePlanning(unittest.TestCase):
     def test_all_recipes_and_multistage_parents_have_closed_plans(self):
         images = ci.catalog()
-        self.assertEqual(len(images),25)
+        self.assertEqual(len(images),20)
         for selected in images:
             seen = set()
             for image in ci.plan(selected):
@@ -32,11 +32,15 @@ class ImagePlanning(unittest.TestCase):
     def test_standalone_does_not_rebuild_base(self):
         self.assertEqual([x['name'] for x in ci.plan('ragnarsec-postgres')],['ragnarsec-postgres'])
     def test_two_parent_recipe_deduplicates_ancestors(self):
-        names = [x['name'] for x in ci.plan('ragnarsec-plane-admin')]
-        self.assertEqual(len(names),len(set(names)))
-        self.assertIn('ragnarsec-builder',names)
-        self.assertIn('ragnarsec-nginx',names)
-        self.assertNotIn('ragnarsec-postgres',names)
+        graph = {
+            'ragnarsec-leaf': {'name': 'ragnarsec-leaf', 'parents': ['ragnarsec-left', 'ragnarsec-right']},
+            'ragnarsec-left': {'name': 'ragnarsec-left', 'parents': ['ragnarsec-common']},
+            'ragnarsec-right': {'name': 'ragnarsec-right', 'parents': ['ragnarsec-common']},
+            'ragnarsec-common': {'name': 'ragnarsec-common', 'parents': []},
+        }
+        names = [x['name'] for x in ci.plan('ragnarsec-leaf', graph)]
+        self.assertEqual(names, ['ragnarsec-common', 'ragnarsec-left', 'ragnarsec-right', 'ragnarsec-leaf'])
+        self.assertEqual(len(names), len(set(names)))
     def test_unknown_or_injection_input_rejected(self):
         for name in ['all','../base','ragnarsec-base; echo bad']:
             with self.assertRaises(ValueError): ci.plan(name)

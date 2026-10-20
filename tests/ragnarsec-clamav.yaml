@@ -14,8 +14,15 @@ fileExistenceTests:
   - name: 'Run Directory'
     path: '/run/clamav'
     shouldExist: true
+  - name: 'ClamAV Entrypoint'
+    path: '/usr/local/bin/clamav-entrypoint.sh'
+    shouldExist: true
 
 commandTests:
+  - name: 'Entrypoint Syntax'
+    command: 'sh'
+    args: ['-n', '/usr/local/bin/clamav-entrypoint.sh']
+    exitCode: 0
   - name: 'ClamAV Version'
     command: 'clamd'
     args: ['--version']

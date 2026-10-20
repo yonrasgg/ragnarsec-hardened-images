@@ -6,17 +6,28 @@ metadataTest:
 
 fileExistenceTests:
   - name: 'BuildKit Daemon'
-    path: '/usr/bin/buildkitd'
+    path: '/usr/local/bin/buildkitd'
     shouldExist: true
   - name: 'BuildKit Client'
-    path: '/usr/bin/buildctl'
+    path: '/usr/local/bin/buildctl'
     shouldExist: true
   - name: 'Runc'
-    path: '/usr/sbin/runc'
+    path: '/usr/bin/runc'
+    shouldExist: true
+  - name: 'Rootless Entrypoint'
+    path: '/usr/local/bin/buildkit-entrypoint.sh'
     shouldExist: true
 
 commandTests:
+  - name: 'Entrypoint Syntax'
+    command: 'sh'
+    args: ['-n', '/usr/local/bin/buildkit-entrypoint.sh']
+    exitCode: 0
   - name: 'BuildKit Version'
     command: 'buildkitd'
+    args: ['--version']
+    exitCode: 0
+  - name: 'BuildKit Client Version'
+    command: 'buildctl'
     args: ['--version']
     exitCode: 0

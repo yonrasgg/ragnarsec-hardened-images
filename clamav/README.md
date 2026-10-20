@@ -37,7 +37,11 @@ time-bounded exceptions. A successful package upgrade does not prove all CVEs ar
 | Publication boundary and secret scanning | Repository guard, hooks and CI definitions; require a successful run for the release commit. |
 | Image test definitions | `../tests/ragnarsec-clamav.yaml`; execution not evidenced by this documentation. |
 
-Defined test cases: `ClamAV Version`, `Freshclam Check`, `ClamAV Config`, `Freshclam Config`, `Run Directory`, `Check Local Socket Config`.
+Defined test cases: `ClamAV Version`, `Freshclam Check`, `ClamAV Config`, `Freshclam Config`, `Run Directory`, `ClamAV Entrypoint`, `Entrypoint Syntax`, `Check Local Socket Config`.
+
+On first start, the entrypoint runs `freshclam` when no main signature database is
+present. Provide a writable `/var/lib/clamav` volume and allow outbound access to the
+ClamAV signature mirrors; a read-only root filesystem needs that volume mounted.
 
 No built-image pass, SBOM, signature, multi-architecture result or runtime smoke-test
 receipt is attached to this documentation update. Do not treat the catalog as an approval.

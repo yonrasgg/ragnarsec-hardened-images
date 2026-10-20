@@ -1,0 +1,4 @@
+ignored:
+  # The catalog deliberately uses named, non-root service users created in the
+  # base image. DL3066 only warns that the host cannot resolve that name.
+  - DL3066
