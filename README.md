@@ -25,8 +25,6 @@ patching process, usage contract and the status of validation evidence.
 - [redis-exporter](redis-exporter/README.md): Redis-compatible metrics exporter.
 - [trivy](trivy/README.md): Container and filesystem security scanning tooling.
 - [valkey](valkey/README.md): Valkey key-value runtime.
-- [waf](waf/README.md): HTTP filtering software and rule-set build recipe.
-- [wazuh-agent](wazuh-agent/README.md): Security telemetry agent recipe.
 - [zap](zap/README.md): Web application security testing tooling; targets require authorization.
 
 Additional component recipes under `plane/` are defined by their Dockerfiles and
@@ -56,14 +54,19 @@ There is no automatic downstream deployment or mutable `latest` promotion.
 ## Continuous integration
 
 CI runs on Jenkins as a multibranch pipeline defined by [`Jenkinsfile`](Jenkinsfile).
-Changes flow through `development`, `staging` and `main`. Short-lived branches
-merge into `development` by pull request; `development` is promoted to `staging`
-for full validation and human review, and `staging` is promoted to `main` only
-after that validation. The job runs the public contract checks, a pinned secret
-scan of the tree and history, and the selected-image plan/validation; it writes to
-a registry only when `PUBLISH` is enabled on `main` and the approval step is
-accepted. Rulesets, credentials, agent labels and the required status check are
-Jenkins/GitHub configuration and are not asserted by this repository.
+`main` is the repository default branch. Work happens on `development`; the order
+`development` -> `staging` -> `main` is fixed and is never skipped. Short-lived
+branches merge into `development` by pull request; `development` is promoted to
+`staging` for full validation and human review, and `staging` is promoted to
+`main` only after that validation and a second successful validation run. A
+promotion that fails any required check is closed and returned to its author,
+including an AI agent, for correction in `development`. The job runs the public
+contract checks, a pinned secret scan of the tree and history, and the
+selected-image plan/validation; it writes to a registry only when `PUBLISH` is
+enabled on `main` and the approval step is accepted. Rulesets, credentials, agent
+labels and the required status check are Jenkins/GitHub configuration and are not
+asserted by this repository. Promotions must be fast-forwarded or rebased,
+never squashed or merged with a merge commit.
 
 ## Contributions and patches
 

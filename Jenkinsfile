@@ -56,8 +56,6 @@ pipeline {
         'ragnarsec-redis-exporter',
         'ragnarsec-trivy',
         'ragnarsec-valkey',
-        'ragnarsec-waf',
-        'ragnarsec-wazuh-agent',
         'ragnarsec-zap'
       ],
       description: 'One image; only its required build parents are included.'
@@ -164,7 +162,11 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
-          mkdir -p "$CI_ROOT"
+          : "${CI_ROOT:?}"
+          # Jenkins may reuse the workspace; the installer requires a new
+          # directory and validation receipts must never survive a build.
+          rm -rf "$CI_ROOT"
+          mkdir -m 700 -p "$CI_ROOT"
           python3 tools/install_ci_tools.py "$CI_TOOLS"
         '''
       }
@@ -252,7 +254,11 @@ GITLEAKS_CONFIG
         if command -v docker >/dev/null 2>&1; then
           docker logout ghcr.io >/dev/null 2>&1 || true
         fi
-        rm -rf "$CI_ROOT/docker-auth"
+        # Remove every per-build artifact: credentials, pinned tools, receipts
+        # and the derived public key. The next build starts from an empty root.
+        if [ -n "${CI_ROOT:-}" ]; then
+          rm -rf "$CI_ROOT"
+        fi
       '''
     }
     success {
