@@ -20,9 +20,14 @@ Long-lived branches:
 
 | Branch | Purpose | Accepts | Publishes |
 |---|---|---|---|
-| `development` | Integration (default) | short-lived branches by pull request | no |
-| `staging` | Full validation and human review | fast-forward from `development` | no |
-| `main` | Release | fast-forward from `staging` | yes, with `PUBLISH` and approval |
+| `main` | Repository default and release | pull request from `staging` only | yes, with `PUBLISH` and approval |
+| `staging` | Full validation and human review | pull request from `development` only | no |
+| `development` | Integration | short-lived branches by pull request | no |
+
+The order is fixed: `development` -> `staging` -> `main`. It is never skipped,
+reversed or shortened, including for urgent fixes and AI-agent work. `main` is
+the repository default branch, so a new pull request must have its base changed
+to `development` before it can be reviewed.
 
 Short-lived branches: `feat/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`
 and `agent/<slug>`. Branch from `development`, open a pull request back to
@@ -33,18 +38,26 @@ Promotion is linear:
 1. Pull request to `development`: contract tests, secret scan and image plan;
    squash merge. GitHub creates and signs the squash commit.
 2. Pull request `development` -> `staging`: full image validation (build, scan,
-   SBOM and signature verification) and human review. Fast-forward or rebase;
-   no publication.
+   SBOM and signature verification) and human review. Squash, fast-forward or
+   rebase; no merge commit and no publication.
 3. Pull request `staging` -> `main`: only for a commit already validated in
-   `staging`; human approval, fast-forward, signed tag `vX.Y.Z`, then publication
-   with `PUBLISH` and the Jenkins approval step.
+   `staging`; full validation runs again, then human approval, squash,
+   fast-forward or rebase, signed tag `vX.Y.Z`, and only then publication with
+   `PUBLISH` and the Jenkins approval step.
+
+A promotion that fails any required check is closed unmerged and returned to the
+sender for correction in `development`. This applies to human and AI-agent
+authors alike: the failure is never fixed forward on `staging` or `main`, and no
+check is waived to preserve the schedule. A corrected change repeats the full
+`development` -> `staging` -> `main` sequence.
 
 Jenkins rejects a `staging` build whose commit is not traceable to
 `development`, and a `main` build whose commit is not traceable to `staging`.
-A rebased promotion is accepted when its exact tree already exists in the lower
-branch. Direct pushes,
-force pushes and branch deletion are blocked on the three long-lived branches;
-`staging` and `main` additionally require signed commits.
+A rewritten promotion (squash or rebase) is accepted when its exact tree
+already exists in the lower branch. Merge commits are disabled in repository
+settings. Direct pushes, force pushes and branch deletion are blocked on the
+three long-lived branches; `staging` and `main` additionally require signed
+commits.
 
 `development` accepts unsigned commits from short-lived branches, but only
 through a pull request; the squash commit is created and signed by GitHub.

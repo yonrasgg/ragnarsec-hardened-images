@@ -20,7 +20,7 @@ ci, install = load('image_ci'), load('install_ci_tools')
 class ImagePlanning(unittest.TestCase):
     def test_all_recipes_and_multistage_parents_have_closed_plans(self):
         images = ci.catalog()
-        self.assertEqual(len(images),27)
+        self.assertEqual(len(images),25)
         for selected in images:
             seen = set()
             for image in ci.plan(selected):
@@ -60,9 +60,38 @@ class ImagePlanning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp);(p/'sbom.json').write_text('{}');(p/'cosign.key').write_text('key')
             (p/'validated.json').write_text(json.dumps([{'ref':ci.REGISTRY+'ragnarsec-base:test','id':'expected','sbom':'sbom.json','sbom_sha256':hashlib.sha256(b'{}').hexdigest()}]))
-            with patch.dict(ci.os.environ,{'PUBLICATION_ENABLED':'true','COSIGN_KEY':str(p/'cosign.key')}),patch.object(ci,'command',return_value=subprocess.CompletedProcess([],0,stdout='changed')) as cmd:
+            def fake(*args,capture=False):
+                if args[:2]==('cosign','public-key'):
+                    Path(args[args.index('--outfile')+1]).write_text('pub')
+                return subprocess.CompletedProcess([],0,stdout='changed')
+            with patch.dict(ci.os.environ,{'PUBLICATION_ENABLED':'true','COSIGN_KEY':str(p/'cosign.key')}),patch.object(ci,'command',side_effect=fake) as cmd:
                 with self.assertRaisesRegex(ValueError,'image-changed'):ci.publish('ragnarsec-base','test',p)
                 self.assertFalse(any(c.args[:2]==('docker','push') for c in cmd.call_args_list))
+    def test_publication_verifies_with_a_derived_public_key(self):
+        digest='sha256:'+'a'*64
+        repository=ci.REGISTRY+'ragnarsec-base'
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp);(p/'sbom.json').write_text('{}');(p/'cosign.key').write_text('key')
+            (p/'validated.json').write_text(json.dumps([{'ref':repository+':test','id':'expected','sbom':'sbom.json','sbom_sha256':hashlib.sha256(b'{}').hexdigest()}]))
+            def fake(*args,capture=False):
+                if args[:2]==('cosign','public-key'):
+                    Path(args[args.index('--outfile')+1]).write_text('pub')
+                    return subprocess.CompletedProcess([],0,stdout='')
+                if args[:3]==('docker','image','inspect'):
+                    if args[3].startswith('--format={{json .RepoDigests}}'):
+                        return subprocess.CompletedProcess([],0,stdout=json.dumps([repository+'@'+digest]))
+                    return subprocess.CompletedProcess([],0,stdout='expected')
+                return subprocess.CompletedProcess([],0,stdout='')
+            with patch.dict(ci.os.environ,{'PUBLICATION_ENABLED':'true','COSIGN_KEY':str(p/'cosign.key')}),patch.object(ci,'command',side_effect=fake) as cmd:
+                ci.publish('ragnarsec-base','test',p)
+            calls=[c.args for c in cmd.call_args_list]
+            verify=[a for a in calls if a[:2] in (('cosign','verify'),('cosign','verify-attestation'))]
+            self.assertEqual(len(verify),2)
+            for args in verify:
+                self.assertEqual(args[args.index('--key')+1],str(p/'cosign.pub'))
+            for args in calls:
+                if args[:2] in (('cosign','sign'),('cosign','attest')):
+                    self.assertEqual(args[args.index('--key')+1],str(p/'cosign.key'))
 
 class ToolCustody(unittest.TestCase):
     def test_checksum_mismatch_rejects_executable(self):
@@ -122,5 +151,12 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertNotIn('image_ci.py validate',before)
         self.assertIn('else',after)
         self.assertIn('image_ci.py validate',after)
+    def test_build_root_is_recreated_and_removed(self):
+        tools=self.pipeline.split("stage('Tools')",1)[1].split("stage('Secret scan')",1)[0]
+        self.assertIn(': "${CI_ROOT:?}"',tools)
+        self.assertIn('rm -rf "$CI_ROOT"',tools)
+        self.assertLess(tools.index('rm -rf "$CI_ROOT"'),tools.index('install_ci_tools.py'))
+        post=self.pipeline.split('post {',1)[1]
+        self.assertIn('rm -rf "$CI_ROOT"',post)
 
 if __name__=='__main__':unittest.main()
