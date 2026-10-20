@@ -11,11 +11,23 @@ fileExistenceTests:
   - name: 'ZAP Script'
     path: '/zap/zap.sh'
     shouldExist: true
+  - name: 'ZAP Entrypoint'
+    path: '/usr/local/bin/zap-entrypoint.sh'
+    shouldExist: true
   - name: 'Java Runtime'
     path: '/usr/bin/java'
     shouldExist: true
 
 commandTests:
+  - name: 'Entrypoint Syntax'
+    command: 'sh'
+    args: ['-n', '/usr/local/bin/zap-entrypoint.sh']
+    exitCode: 0
+  - name: 'Entrypoint Requires API Key'
+    command: '/usr/local/bin/zap-entrypoint.sh'
+    args: []
+    exitCode: 1
+    expectedError: ['ZAP_API_KEY must be set']
   - name: 'Java Version'
     command: 'java'
     args: ['-version']

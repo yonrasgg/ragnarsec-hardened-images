@@ -21,11 +21,16 @@ USER root
 # hadolint ignore=DL3018
 RUN apk upgrade --no-cache && \
     apk add --no-cache grafana && \
-    mkdir -p /var/lib/grafana /var/log/grafana /etc/grafana && \
+    mkdir -p /var/lib/grafana/plugins /var/log/grafana /etc/grafana && \
     chown -R ragnarsec:ragnarsec /var/lib/grafana /var/log/grafana /etc/grafana
 
 USER ragnarsec
 WORKDIR /usr/share/grafana
+
+# Keep the external plugin path writable and avoid downloading preinstall
+# plugins at startup. Operators must bake or provision reviewed plugins.
+ENV GF_PATHS_PLUGINS=/var/lib/grafana/plugins \
+    GF_PLUGINS_PREINSTALL_DISABLED=true
 
 # Expose default port
 EXPOSE 3000
