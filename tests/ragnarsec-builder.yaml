@@ -1,0 +1,43 @@
+schemaVersion: 2.0.0
+metadataTest:
+  user: ragnarsec
+  workdir: /app
+  envVars:
+    - key: VIRTUAL_ENV
+      value: /app/venv
+    - key: PIP_NO_CACHE_DIR
+      value: "1"
+commandTests:
+  - name: 'Python Version'
+    command: 'python3'
+    args: ['--version']
+    expectedOutput: ['Python 3']
+    exitCode: 0
+  - name: 'Node Version'
+    command: 'node'
+    args: ['--version']
+    expectedOutput: ['v22']
+  - name: 'NPM Version'
+    command: 'npm'
+    args: ['--version']
+    exitCode: 0
+  - name: 'Make Version'
+    command: 'make'
+    args: ['--version']
+    exitCode: 0
+  - name: 'Git Version'
+    command: 'git'
+    args: ['--version']
+    exitCode: 0
+  - name: 'Curl Available'
+    command: 'curl'
+    args: ['--version']
+    exitCode: 0
+  - name: 'Build Tools Available (gcc)'
+    command: 'gcc'
+    args: ['--version']
+    exitCode: 0
+fileExistenceTests:
+  - name: 'Venv Activation'
+    path: '/app/venv/bin/activate'
+    shouldExist: true

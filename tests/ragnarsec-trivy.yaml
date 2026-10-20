@@ -1,0 +1,20 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /home/ragnarsec
+
+fileExistenceTests:
+  - name: 'Trivy Binary'
+    path: '/usr/bin/trivy'
+    shouldExist: true
+  - name: 'Trivy Cache'
+    path: '/home/ragnarsec/.cache/trivy'
+    shouldExist: true
+    permissions: 'drwxr-xr-x'
+
+commandTests:
+  - name: 'Trivy Version'
+    command: 'trivy'
+    args: ['--version']
+    exitCode: 0

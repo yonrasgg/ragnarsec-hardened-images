@@ -1,0 +1,22 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /home/ragnarsec
+
+fileExistenceTests:
+  - name: 'BuildKit Daemon'
+    path: '/usr/bin/buildkitd'
+    shouldExist: true
+  - name: 'BuildKit Client'
+    path: '/usr/bin/buildctl'
+    shouldExist: true
+  - name: 'Runc'
+    path: '/usr/sbin/runc'
+    shouldExist: true
+
+commandTests:
+  - name: 'BuildKit Version'
+    command: 'buildkitd'
+    args: ['--version']
+    exitCode: 0

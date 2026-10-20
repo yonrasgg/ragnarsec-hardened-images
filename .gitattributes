@@ -1,0 +1,15 @@
+AGENTS.md export-ignore
+agents.md export-ignore
+AGENTS.override.md export-ignore
+CLAUDE.md export-ignore
+GEMINI.md export-ignore
+SKILL.md export-ignore
+.agents export-ignore
+.codex export-ignore
+.opencode export-ignore
+.claude export-ignore
+.context export-ignore
+context export-ignore
+contexts export-ignore
+routes export-ignore
+skills export-ignore

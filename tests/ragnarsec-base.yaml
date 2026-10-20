@@ -1,0 +1,30 @@
+schemaVersion: 2.0.0
+metadataTest:
+  entrypoint: ["/sbin/tini", "--"]
+  user: ragnarsec
+  workdir: /app
+fileExistenceTests:
+  - name: 'CA Certificates'
+    path: '/etc/ssl/certs/ca-certificates.crt'
+    shouldExist: true
+  - name: 'Tini'
+    path: '/sbin/tini'
+    shouldExist: true
+  - name: 'No sudo'
+    path: '/usr/bin/sudo'
+    shouldExist: false
+commandTests:
+  - name: 'Tini Version'
+    command: 'tini'
+    args: ['--version']
+    exitCode: 0
+  - name: 'User is non-root'
+    command: 'id'
+    args: ['-u']
+    expectedOutput: ['1000']
+    exitCode: 0
+  - name: 'User is non-root'
+    command: 'id'
+    args: ['-u']
+    expectedOutput: ['1000']
+    exitCode: 0

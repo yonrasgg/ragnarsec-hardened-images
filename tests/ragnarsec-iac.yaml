@@ -1,0 +1,43 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /app
+  envVars:
+    - key: PATH
+      value: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+fileExistenceTests:
+  - name: 'Terraform Binary'
+    path: '/usr/bin/terraform'
+    shouldExist: true
+  - name: 'TFLint Binary'
+    path: '/usr/local/bin/tflint'
+    shouldExist: true
+  - name: 'Checkov Binary'
+    path: '/usr/bin/checkov'
+    shouldExist: true
+  - name: 'Conftest Binary'
+    path: '/usr/local/bin/conftest'
+    shouldExist: true
+  - name: 'OPA Binary'
+    path: '/usr/local/bin/opa'
+    shouldExist: true
+
+commandTests:
+  - name: 'Terraform Version'
+    command: 'terraform'
+    args: ['version']
+    exitCode: 0
+  - name: 'TFLint Version'
+    command: 'tflint'
+    args: ['--version']
+    exitCode: 0
+  - name: 'Checkov Version'
+    command: 'checkov'
+    args: ['--version']
+    exitCode: 0
+  - name: 'OPA Version'
+    command: 'opa'
+    args: ['version']
+    exitCode: 0

@@ -1,0 +1,100 @@
+schemaVersion: 2.0.0
+
+# Container Structure Tests for ragnarsec-python-pdf
+# Validates PDF generation dependencies are correctly installed
+
+metadataTest:
+  user: ragnarsec
+  workdir: /app
+  envVars:
+    - key: VIRTUAL_ENV
+      value: /app/venv
+    - key: PYTHONUNBUFFERED
+      value: "1"
+
+fileExistenceTests:
+  # Virtual environment
+  - name: 'Virtual Environment Activation Script'
+    path: '/app/venv/bin/activate'
+    shouldExist: true
+  - name: 'Python in Venv'
+    path: '/app/venv/bin/python3'
+    shouldExist: true
+
+  # NOTE: Architecture-specific library paths removed.
+  # Library availability is validated via commandTests using CDLL loading,
+  # which works on both amd64 and arm64 without hardcoding paths.
+
+  # Fonts for consistent rendering (architecture-independent)
+  - name: 'Liberation Sans Font'
+    path: '/usr/share/fonts/liberation/LiberationSans-Regular.ttf'
+    shouldExist: true
+
+commandTests:
+  # Python environment
+  - name: 'Python Version'
+    command: 'python3'
+    args: ['--version']
+    expectedOutput: ['Python 3']
+    exitCode: 0
+
+  - name: 'Pip Version'
+    command: 'pip'
+    args: ['--version']
+    exitCode: 0
+
+  # Library loading tests (validate dependencies are usable)
+  - name: 'Pango Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libpango-1.0.so.0"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  - name: 'Cairo Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libcairo.so.2"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  - name: 'PangoCairo Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libpangocairo-1.0.so.0"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  - name: 'JPEG Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libjpeg.so.8"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  - name: 'OpenJPEG2 Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libopenjp2.so.7"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  - name: 'FFI Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libffi.so.8"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  - name: 'OpenJPEG2 Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libopenjp2.so.7"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  - name: 'FFI Library Loadable'
+    command: 'python3'
+    args: ['-c', 'from ctypes import CDLL; CDLL("libffi.so.8"); print("OK")']
+    expectedOutput: ['OK']
+    exitCode: 0
+
+  # Font availability
+  - name: 'Fonts Available'
+    command: 'fc-list'
+    args: [':family=Liberation Sans']
+    expectedOutput: ['Liberation Sans']
+    exitCode: 0

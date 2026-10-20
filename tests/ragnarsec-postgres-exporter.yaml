@@ -1,0 +1,17 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /app
+
+fileExistenceTests:
+  - name: 'Postgres Exporter Binary'
+    path: '/usr/bin/postgres_exporter'
+    shouldExist: true
+
+commandTests:
+  - name: 'Postgres Exporter Version'
+    command: 'sh'
+    args: ['-c', 'postgres_exporter --version 2>&1']
+    exitCode: 0
+    expectedOutput: ['postgres_exporter']
