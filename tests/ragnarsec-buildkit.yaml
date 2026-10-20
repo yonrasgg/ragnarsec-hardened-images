@@ -3,6 +3,13 @@ schemaVersion: 2.0.0
 metadataTest:
   user: ragnarsec
   workdir: /home/ragnarsec
+  envVars:
+    - key: USER
+      value: ragnarsec
+    - key: XDG_RUNTIME_DIR
+      value: /run/user/1000
+    - key: BUILDKIT_HOST
+      value: unix:///run/user/1000/buildkit/buildkitd.sock
 
 fileExistenceTests:
   - name: 'BuildKit Daemon'
@@ -17,6 +24,11 @@ fileExistenceTests:
   - name: 'Rootless Entrypoint'
     path: '/usr/local/bin/buildkit-entrypoint.sh'
     shouldExist: true
+  - name: 'Shared Runtime Directory'
+    path: '/run/user/1000'
+    shouldExist: true
+    uid: 1000
+    gid: 1000
 
 commandTests:
   - name: 'Entrypoint Syntax'
