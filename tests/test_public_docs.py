@@ -47,5 +47,14 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertNotIn('ci/bootstrap', text)
         self.assertNotIn('ci/bootstrap', (ROOT / 'Jenkinsfile').read_text())
 
+    def test_promotion_order_is_fixed_and_failures_return_to_sender(self):
+        text = ' '.join((ROOT / 'CONTRIBUTING.md').read_text().split())
+        self.assertIn('`main` | Repository default and release', text)
+        self.assertIn('`development` -> `staging` -> `main`', text)
+        self.assertIn('never skipped', text)
+        self.assertIn('closed unmerged and returned to the sender', text)
+        readme = ' '.join((ROOT / 'README.md').read_text().split())
+        self.assertIn('`main` is the repository default branch', readme)
+
 if __name__ == '__main__':
     unittest.main()
