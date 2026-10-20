@@ -1,0 +1,26 @@
+schemaVersion: 2.0.0
+metadataTest:
+  user: postgres
+fileExistenceTests:
+  - name: 'Postgres Config'
+    path: '/etc/postgresql/postgresql.conf'
+    shouldExist: true
+  - name: 'HBA Config'
+    path: '/etc/postgresql/pg_hba.conf'
+    shouldExist: true
+  - name: 'Gosu Removed'
+    path: '/usr/local/bin/gosu'
+    shouldExist: false
+commandTests:
+  - name: 'Postgres Version'
+    command: 'postgres'
+    args: ['--version']
+    expectedOutput: ['15']
+    exitCode: 0
+fileContentTests:
+  - name: 'SCRAM-SHA-256 Auth Enforced'
+    path: '/etc/postgresql/postgresql.conf'
+    expectedContents: ['scram-sha-256']
+  - name: 'HBA IPv4 Uses SCRAM'
+    path: '/etc/postgresql/pg_hba.conf'
+    expectedContents: ['scram-sha-256']

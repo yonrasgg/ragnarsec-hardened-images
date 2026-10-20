@@ -1,0 +1,20 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /var/lib/prometheus
+
+fileExistenceTests:
+  - name: 'Prometheus Binary'
+    path: '/usr/bin/prometheus'
+    shouldExist: true
+  - name: 'Prometheus Config'
+    path: '/etc/prometheus/prometheus.yml'
+    shouldExist: true
+
+commandTests:
+  - name: 'Prometheus Version'
+    command: 'prometheus'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['prometheus']

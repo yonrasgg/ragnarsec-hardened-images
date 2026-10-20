@@ -1,0 +1,30 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /home/ragnarsec
+  envVars:
+    - key: ZAP_PATH
+      value: /zap/zap.sh
+
+fileExistenceTests:
+  - name: 'ZAP Script'
+    path: '/zap/zap.sh'
+    shouldExist: true
+  - name: 'Java Runtime'
+    path: '/usr/bin/java'
+    shouldExist: true
+
+commandTests:
+  - name: 'Java Version'
+    command: 'java'
+    args: ['-version']
+    exitCode: 0
+  - name: 'Python Version'
+    command: 'python3'
+    args: ['--version']
+    exitCode: 0
+  - name: 'ZAP Help'
+    command: '/zap/zap.sh'
+    args: ['-h']
+    exitCode: 0

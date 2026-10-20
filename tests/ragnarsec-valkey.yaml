@@ -1,0 +1,17 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /var/lib/valkey
+
+fileExistenceTests:
+  - name: 'Valkey Binary'
+    path: '/usr/bin/valkey-server'
+    shouldExist: true
+
+commandTests:
+  - name: 'Valkey Version'
+    command: 'valkey-server'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['Server']

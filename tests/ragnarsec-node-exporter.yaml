@@ -1,0 +1,17 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /app
+
+fileExistenceTests:
+  - name: 'Node Exporter Binary'
+    path: '/usr/bin/node_exporter'
+    shouldExist: true
+
+commandTests:
+  - name: 'Node Exporter Version'
+    command: 'node_exporter'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['node_exporter']

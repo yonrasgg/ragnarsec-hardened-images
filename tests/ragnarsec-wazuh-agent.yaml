@@ -1,0 +1,26 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /var/ossec
+
+fileExistenceTests:
+  - name: 'Agent Directory'
+    path: '/var/ossec'
+    shouldExist: true
+  - name: 'Agent Config Dir'
+    path: '/var/ossec/etc'
+    shouldExist: true
+  - name: 'Agent Logs Dir'
+    path: '/var/ossec/logs'
+    shouldExist: true
+
+commandTests:
+  - name: 'Curl Check'
+    command: 'curl'
+    args: ['--version']
+    exitCode: 0
+  - name: 'Process Check'
+    command: 'ls'
+    args: ['/var/ossec']
+    exitCode: 0

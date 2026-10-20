@@ -1,0 +1,32 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: clamav
+  workdir: /var/lib/clamav
+
+fileExistenceTests:
+  - name: 'ClamAV Config'
+    path: '/etc/clamav/clamd.conf'
+    shouldExist: true
+  - name: 'Freshclam Config'
+    path: '/etc/clamav/freshclam.conf'
+    shouldExist: true
+  - name: 'Run Directory'
+    path: '/run/clamav'
+    shouldExist: true
+
+commandTests:
+  - name: 'ClamAV Version'
+    command: 'clamd'
+    args: ['--version']
+    exitCode: 0
+  - name: 'Freshclam Check'
+    command: 'freshclam'
+    args: ['--version']
+    exitCode: 0
+
+fileContentTests:
+  - name: 'Check Local Socket Config'
+    path: '/etc/clamav/clamd.conf'
+    expectedContents: ['LocalSocket /']
+

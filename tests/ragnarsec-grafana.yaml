@@ -1,0 +1,20 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /usr/share/grafana
+
+fileExistenceTests:
+  - name: 'Grafana Binary'
+    path: '/usr/bin/grafana'
+    shouldExist: true
+  - name: 'Grafana Config'
+    path: '/etc/grafana.ini'
+    shouldExist: true
+
+commandTests:
+  - name: 'Grafana Version'
+    command: 'grafana'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['version']

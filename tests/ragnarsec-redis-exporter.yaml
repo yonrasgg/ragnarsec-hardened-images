@@ -1,0 +1,17 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: ragnarsec
+  workdir: /app
+
+fileExistenceTests:
+  - name: 'Redis Exporter Binary'
+    path: '/usr/local/bin/redis_exporter'
+    shouldExist: true
+
+commandTests:
+  - name: 'Redis Exporter Version'
+    command: 'redis_exporter'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['Redis Metrics Exporter']
