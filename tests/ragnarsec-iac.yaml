@@ -5,17 +5,20 @@ metadataTest:
   workdir: /app
   envVars:
     - key: PATH
-      value: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      value: /app/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 fileExistenceTests:
-  - name: 'Terraform Binary'
-    path: '/usr/bin/terraform'
+  - name: 'OpenTofu Binary'
+    path: '/usr/local/bin/tofu'
+    shouldExist: true
+  - name: 'Terraform Compatibility Link'
+    path: '/usr/local/bin/terraform'
     shouldExist: true
   - name: 'TFLint Binary'
     path: '/usr/local/bin/tflint'
     shouldExist: true
   - name: 'Checkov Binary'
-    path: '/usr/bin/checkov'
+    path: '/app/venv/bin/checkov'
     shouldExist: true
   - name: 'Conftest Binary'
     path: '/usr/local/bin/conftest'
@@ -25,7 +28,11 @@ fileExistenceTests:
     shouldExist: true
 
 commandTests:
-  - name: 'Terraform Version'
+  - name: 'OpenTofu Version'
+    command: 'tofu'
+    args: ['version']
+    exitCode: 0
+  - name: 'Terraform Compatibility Version'
     command: 'terraform'
     args: ['version']
     exitCode: 0
