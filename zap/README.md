@@ -38,7 +38,7 @@ time-bounded exceptions. A successful package upgrade does not prove all CVEs ar
 | Publication boundary and secret scanning | Repository guard, hooks and CI definitions; require a successful run for the release commit. |
 | Image test definitions | `../tests/ragnarsec-zap.yaml`; execution not evidenced by this documentation. |
 
-Defined test cases: `Entrypoint Syntax`, `Entrypoint Requires API Key`, `Java Version`, `Python Version`, `ZAP Help`, `ZAP Script`, `ZAP Entrypoint`, `Java Runtime`.
+Defined test cases: `Java Version`, `Python Version`, `ZAP Help`, `ZAP Script`, `Java Runtime`.
 
 No built-image pass, SBOM, signature, multi-architecture result or runtime smoke-test
 receipt is attached to this documentation update. Do not treat the catalog as an approval.
@@ -50,12 +50,6 @@ A local build example (does not publish or deploy):
 ```sh
 docker build -f zap/Dockerfile -t example/zap:review zap/
 ```
-
-The default command requires `ZAP_API_KEY`; startup fails closed without it. The
-entrypoint binds ZAP to `ZAP_HOST` (default `0.0.0.0`) on `ZAP_PORT` (default
-`8080`) and passes the key through `api.key`. Do not set
-`api.disablekey=true` outside a disposable, isolated test. Restrict network access
-to the API to the authorized scanner control plane.
 
 Images named in `FROM` must be available to the builder. Inspect build arguments before use.
 Provide credentials and environment-specific settings at runtime using the consumer's

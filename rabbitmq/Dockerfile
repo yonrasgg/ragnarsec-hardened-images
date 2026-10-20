@@ -35,8 +35,8 @@ ENV RABBITMQ_DATA_DIR=/var/lib/rabbitmq \
     RABBITMQ_CONFIG_FILE=/etc/rabbitmq/rabbitmq \
     RABBITMQ_HOME=/usr/lib/rabbitmq
 
-# Expose the AMQP port only. The management plugin is not enabled by default.
-EXPOSE 5672
+# Expose ports: 5672 (AMQP), 15672 (Mgmt)
+EXPOSE 5672 15672
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["rabbitmq-server"]

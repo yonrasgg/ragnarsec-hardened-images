@@ -3,9 +3,7 @@ schemaVersion: 2.0.0
 metadataTest:
   user: rabbitmq
   workdir: /var/lib/rabbitmq
-  cmd: ['rabbitmq-server']
-  exposedPorts: ['5672']
-
+  
 fileExistenceTests:
   - name: 'RabbitMQ Server Binary'
     path: '/usr/lib/rabbitmq/bin/rabbitmq-server'

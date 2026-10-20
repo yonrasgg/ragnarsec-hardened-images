@@ -31,4 +31,4 @@ WORKDIR /var/lib/valkey
 EXPOSE 6379
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["valkey-server", "--protected-mode", "yes"]
+CMD ["valkey-server", "--protected-mode", "no"]

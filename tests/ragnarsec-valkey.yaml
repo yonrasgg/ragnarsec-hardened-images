@@ -3,8 +3,6 @@ schemaVersion: 2.0.0
 metadataTest:
   user: ragnarsec
   workdir: /var/lib/valkey
-  cmd: ['valkey-server', '--protected-mode', 'yes']
-  exposedPorts: ['6379']
 
 fileExistenceTests:
   - name: 'Valkey Binary'

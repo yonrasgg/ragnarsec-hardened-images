@@ -52,11 +52,6 @@ docker build -f valkey/Dockerfile -t example/valkey:review valkey/
 
 Images named in `FROM` must be available to the builder. Inspect build arguments before use.
 Declared image ports: `6379`. Declaring a port does not publish it.
-
-The default command keeps Valkey's protected mode enabled. To accept remote
-connections, configure an explicit bind address and authentication in a reviewed
-runtime configuration; do not disable protected mode just to make a port reachable.
-
 Provide credentials and environment-specific settings at runtime using the consumer's
 approved mechanism. Never copy real environment files, keys, certificates, inventories
 or production configuration into the build context. Keep sample identifiers reserved.

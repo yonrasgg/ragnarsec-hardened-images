@@ -51,12 +51,7 @@ docker build -f rabbitmq/Dockerfile -t example/rabbitmq:review rabbitmq/
 ```
 
 Images named in `FROM` must be available to the builder. Inspect build arguments before use.
-Declared image ports: `5672`. Declaring a port does not publish it.
-
-The `rabbitmq_management` plugin is not enabled by default, so the image does not
-declare port `15672`. Enable the plugin in a reviewed derived image if the management
-UI or HTTP API is required.
-
+Declared image ports: `5672 15672`. Declaring a port does not publish it.
 Provide credentials and environment-specific settings at runtime using the consumer's
 approved mechanism. Never copy real environment files, keys, certificates, inventories
 or production configuration into the build context. Keep sample identifiers reserved.
