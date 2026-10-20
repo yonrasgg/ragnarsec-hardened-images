@@ -88,6 +88,15 @@ def publish(selected, tag, output):
     key = os.environ.get('COSIGN_KEY')
     if not key or not Path(key).is_file():
         raise ValueError('signing-key-not-configured')
+    # Cosign signs with the private key but verifies with a public key. Derive the
+    # public key from the configured private key once and never pass the private
+    # key to verify: cosign rejects it after the image has already been pushed.
+    public = output/'cosign.pub'
+    if public.exists():
+        public.unlink()
+    command('cosign', 'public-key', '--key', key, '--outfile', str(public))
+    if not public.is_file():
+        raise ValueError('public-key-not-derived')
     expected = [REGISTRY+i['name']+':'+tag for i in plan(selected)]
     receipts = json.loads((output/'validated.json').read_text())
     if [r['ref'] for r in receipts] != expected:
@@ -109,8 +118,8 @@ def publish(selected, tag, output):
             raise ValueError('pushed-digest-unconfirmed')
         command('cosign','sign','--yes','--key',key,digest)
         command('cosign','attest','--yes','--key',key,'--type','cyclonedx','--predicate',str(output/r['sbom']),digest)
-        command('cosign','verify','--key',key,digest)
-        command('cosign','verify-attestation','--type','cyclonedx','--key',key,digest)
+        command('cosign','verify','--key',str(public),digest)
+        command('cosign','verify-attestation','--type','cyclonedx','--key',str(public),digest)
         print('Published and signature/attestation verified: '+digest)
 
 
