@@ -108,10 +108,12 @@ class JenkinsBoundaries(unittest.TestCase):
     def test_promotion_provenance_is_enforced(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
         self.assertIn('CHANGE_TARGET',provenance)
-        self.assertIn('require_ancestor development',provenance)
-        self.assertIn('require_ancestor staging',provenance)
+        self.assertIn('require_traceable development',provenance)
+        self.assertIn('require_traceable staging',provenance)
         self.assertIn('origin/${branch}',provenance)
         self.assertIn('merge-base --is-ancestor',provenance)
+        self.assertIn('%T',provenance)
+        self.assertIn('grep -qx',provenance)
         self.assertIn('HEAD^2',provenance)
     def test_development_is_plan_only(self):
         validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]

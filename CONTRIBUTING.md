@@ -39,8 +39,10 @@ Promotion is linear:
    `staging`; human approval, fast-forward, signed tag `vX.Y.Z`, then publication
    with `PUBLISH` and the Jenkins approval step.
 
-Jenkins fails a `staging` build whose commit is not contained in `development`,
-and a `main` build whose commit is not contained in `staging`. Direct pushes,
+Jenkins rejects a `staging` build whose commit is not traceable to
+`development`, and a `main` build whose commit is not traceable to `staging`.
+A rebased promotion is accepted when its exact tree already exists in the lower
+branch. Direct pushes,
 force pushes and branch deletion are blocked on the three long-lived branches;
 `staging` and `main` additionally require signed commits.
 

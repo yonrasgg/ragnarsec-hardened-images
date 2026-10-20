@@ -92,15 +92,20 @@ pipeline {
             echo 'STOP: complete history required; configure a non-shallow checkout.' >&2
             exit 2
           }
-          require_ancestor() {
+          require_traceable() {
             branch="$1"
             commit="$2"
             message="$3"
             git fetch --no-tags origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"
-            git merge-base --is-ancestor "$commit" "origin/${branch}" || {
-              echo "STOP: ${message}" >&2
-              exit 2
-            }
+            if git merge-base --is-ancestor "$commit" "origin/${branch}"; then
+              return 0
+            fi
+            tree="$(git rev-parse "${commit}^{tree}")"
+            if git log --format='%T' "origin/${branch}" | grep -qx "$tree"; then
+              return 0
+            fi
+            echo "STOP: ${message}" >&2
+            exit 2
           }
           target="${CHANGE_TARGET:-$BRANCH_NAME}"
           if [ -n "${CHANGE_TARGET:-}" ]; then
@@ -113,23 +118,23 @@ pipeline {
                   echo 'STOP: staging accepts pull requests only from development.' >&2
                   exit 2
                 }
-                require_ancestor development "$head" 'staging pull request is not contained in development.'
+                require_traceable development "$head" 'staging pull request is not traceable to development.'
                 ;;
               main)
                 test "$source" = "staging" || {
                   echo 'STOP: main accepts pull requests only from staging.' >&2
                   exit 2
                 }
-                require_ancestor staging "$head" 'main pull request is not contained in staging.'
+                require_traceable staging "$head" 'main pull request is not traceable to staging.'
                 ;;
             esac
           else
             case "$target" in
               staging)
-                require_ancestor development HEAD 'staging commit is not contained in development.'
+                require_traceable development HEAD 'staging commit is not traceable to development.'
                 ;;
               main)
-                require_ancestor staging HEAD 'main commit is not contained in staging.'
+                require_traceable staging HEAD 'main commit is not traceable to staging.'
                 ;;
             esac
           fi
