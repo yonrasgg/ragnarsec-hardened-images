@@ -1,0 +1,23 @@
+schemaVersion: 2.0.0
+metadataTest:
+  user: "1000:1000"
+  exposedPorts: []
+fileExistenceTests:
+  - name: 'CA bundle'
+    path: '/etc/ssl/certs/ca-certificates.crt'
+    shouldExist: true
+  - name: 'tini'
+    path: '/sbin/tini'
+    shouldExist: true
+  - name: 'No shell'
+    path: '/bin/sh'
+    shouldExist: false
+  - name: 'No busybox'
+    path: '/bin/busybox'
+    shouldExist: false
+commandTests:
+  - name: 'tini runs'
+    command: '/sbin/tini'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['tini version 0\.19\.0']
