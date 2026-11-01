@@ -230,6 +230,39 @@ class DockerfilePolicy(unittest.TestCase):
                                   'FROM builder AS runtime\n')
             self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
 
+    def test_run_continuation_cannot_spoof_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS safe\nUSER 1000:1000\n'
+                                  'FROM scratch AS runtime\nUSER root\n'
+                                  "RUN printf '%s' \\\nFROM safe\n")
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_heredoc_cannot_spoof_stage_or_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS safe\nUSER 1000:1000\n'
+                                  'FROM scratch AS runtime\nUSER root\n'
+                                  'RUN <<EOF\nFROM safe\nUSER 1000:1000\nEOF\n')
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+            dockerfile.write_text('FROM scratch\nRUN <<-"SCRIPT"\n'
+                                  'USER 1000:1000\n\tSCRIPT\n')
+            self.assertIn('missing-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_continued_from_inherits_local_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS builder\nUSER 1000:1000\n'
+                                  'FROM --platform=$BUILDPLATFORM \\\n builder AS runtime\n')
+            self.assertNotIn('missing-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_escape_directive_continuation_cannot_spoof_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('# escape=`\nFROM alpine:3.21 AS safe\nUSER 1000\n'
+                                  'FROM scratch\nUSER root\nRUN echo `\nFROM safe\n')
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+
     def test_final_stage_user_overrides_inherited_user(self):
         with tempfile.TemporaryDirectory() as tmp:
             dockerfile = Path(tmp) / 'Dockerfile'
