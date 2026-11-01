@@ -16,11 +16,35 @@ def load(name):
     spec.loader.exec_module(module)
     return module
 ci, install = load('image_ci'), load('install_ci_tools')
+policy = load('image_policy')
 
 class ImagePlanning(unittest.TestCase):
+    def test_foreign_platform_uses_qemu_registration_name(self):
+        for native, foreign, handler in (
+            ('x86_64', 'linux/arm64', 'qemu-aarch64'),
+            ('aarch64', 'linux/amd64', 'qemu-x86_64'),
+        ):
+            with self.subTest(native=native, foreign=foreign):
+                with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': native})()), \
+                     patch.object(ci.Path, 'exists', autospec=True,
+                                  side_effect=lambda path: path.name == handler):
+                    ci.require_platforms_available([foreign])
+
+    def test_foreign_platform_without_handler_fails(self):
+        with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
+             patch.object(ci.Path, 'exists', return_value=False):
+            with self.assertRaisesRegex(ValueError, 'platform-not-native-and-not-emulated:linux/arm64'):
+                ci.require_platforms_available(['linux/arm64'])
+
+    def test_native_platform_needs_no_qemu_handler(self):
+        with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
+             patch.object(ci.Path, 'exists', side_effect=AssertionError('native checked binfmt')):
+            ci.require_platforms_available(['linux/amd64'])
+
     def test_all_recipes_and_multistage_parents_have_closed_plans(self):
         images = ci.catalog()
-        self.assertEqual(len(images),21)
+        self.assertEqual(len(images),22)
+        self.assertNotIn('ragnarsec-zap', images)
         for selected in images:
             seen = set()
             for image in ci.plan(selected):
@@ -51,6 +75,25 @@ class ImagePlanning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(ci,'command') as cmd:
             with self.assertRaises(ValueError): ci.validate('ragnarsec-base','../bad',Path(tmp)/'out')
             cmd.assert_not_called()
+    def test_container_builder_rejected_before_parent_build(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
+             patch.object(ci, 'require_platforms_available'), \
+             patch.object(ci, 'command', return_value=subprocess.CompletedProcess(
+                 [], 0, stdout='Name: remote\nDriver: docker-container\n')) as cmd:
+            output = Path(tmp) / 'out'
+            with self.assertRaisesRegex(ValueError, 'builder-must-use-docker-driver'):
+                ci.validate('ragnarsec-alertmanager', 'test', output)
+            self.assertFalse(output.exists())
+            self.assertFalse(any(call.args[:3] == ('docker', 'buildx', 'build')
+                                 for call in cmd.call_args_list))
+
+    def test_docker_driver_allows_local_parent_workflow(self):
+        with patch.object(ci, 'command', return_value=subprocess.CompletedProcess(
+                [], 0, stdout='Name: default\nDriver: docker\n')) as cmd:
+            ci.require_local_parent_builder()
+            cmd.assert_called_once_with('docker', 'buildx', 'inspect', capture=True)
+
     def test_failed_validation_never_writes_success_receipt(self):
         env = {'PLATFORMS': 'linux/amd64'}
         with tempfile.TemporaryDirectory() as tmp, patch.dict(ci.os.environ, env),                 patch.object(ci, 'command', side_effect=subprocess.CalledProcessError(1, 'hadolint')):
@@ -67,6 +110,34 @@ class ImagePlanning(unittest.TestCase):
         return {'ref': repository + ':test-' + suffix, 'name': 'ragnarsec-base',
                 'platform': platform, 'id': image_id, 'sbom': 'sbom.json',
                 'sbom_sha256': hashlib.sha256(b'{}').hexdigest()}
+
+    def test_publication_rejects_receipt_with_wrong_tag_or_repository_before_push(self):
+        repository = ci.REGISTRY + 'ragnarsec-base'
+        for ref, tag in (
+            (repository + ':validated-amd64', 'other'),
+            ('ghcr.io/other/ragnarsec-base:test-amd64', 'test'),
+        ):
+            with self.subTest(ref=ref, tag=tag), tempfile.TemporaryDirectory() as tmp:
+                p = Path(tmp)
+                (p / 'cosign.key').write_text('key')
+                (p / 'sbom.json').write_text('{}')
+                receipt = self._receipt(repository, 'linux/amd64')
+                receipt['ref'] = ref
+                (p / 'validated.json').write_text(json.dumps([receipt]))
+
+                def fake(*args, capture=False):
+                    if args[:2] == ('cosign', 'public-key'):
+                        Path(args[args.index('--outfile') + 1]).write_text('pub')
+                    if args[:3] == ('docker', 'image', 'inspect'):
+                        return subprocess.CompletedProcess([], 0, stdout='expected')
+                    return subprocess.CompletedProcess([], 0, stdout='')
+
+                env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
+                       'PLATFORMS': 'linux/amd64'}
+                with patch.dict(ci.os.environ, env), patch.object(ci, 'command', side_effect=fake) as cmd:
+                    with self.assertRaisesRegex(ValueError, 'validation-receipt-mismatch'):
+                        ci.publish('ragnarsec-base', tag, p)
+                    self.assertFalse(any(call.args[:2] == ('docker', 'push') for call in cmd.call_args_list))
 
     def test_tampered_image_never_pushed(self):
         repository = ci.REGISTRY + 'ragnarsec-base'
@@ -131,6 +202,80 @@ class ImagePlanning(unittest.TestCase):
                 if a[:2] in (('cosign', 'sign'), ('cosign', 'attest')):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
+class DockerfilePolicy(unittest.TestCase):
+    def test_root_user_with_group_requires_exception(self):
+        for user in ('0:0', 'root:root', '0:1000', 'root:1000'):
+            with self.subTest(user=user), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.21\nUSER ' + user + '\n')
+                self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+                dockerfile.write_text('# policy: allow-root upstream requirement\n'
+                                      'FROM alpine:3.21\nUSER ' + user + '\n')
+                self.assertNotIn('root-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_final_stage_does_not_inherit_user_from_unrelated_builder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS builder\nUSER 1000:1000\n'
+                                  'FROM scratch\nCOPY --from=builder /app /app\n')
+            self.assertIn('missing-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_final_stage_inherits_user_from_named_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM --platform=$BUILDPLATFORM alpine:3.21 AS builder\n'
+                                  'USER 1000:1000\nFROM builder AS runtime\n')
+            self.assertNotIn('missing-final-user', policy.check_dockerfile(dockerfile))
+            dockerfile.write_text('FROM alpine:3.21 AS builder\nUSER 0:0\n'
+                                  'FROM builder AS runtime\n')
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_run_continuation_cannot_spoof_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS safe\nUSER 1000:1000\n'
+                                  'FROM scratch AS runtime\nUSER root\n'
+                                  "RUN printf '%s' \\\nFROM safe\n")
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_heredoc_cannot_spoof_stage_or_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS safe\nUSER 1000:1000\n'
+                                  'FROM scratch AS runtime\nUSER root\n'
+                                  'RUN <<EOF\nFROM safe\nUSER 1000:1000\nEOF\n')
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+            dockerfile.write_text('FROM scratch\nRUN <<-"SCRIPT"\n'
+                                  'USER 1000:1000\n\tSCRIPT\n')
+            self.assertIn('missing-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_continued_from_inherits_local_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS builder\nUSER 1000:1000\n'
+                                  'FROM --platform=$BUILDPLATFORM \\\n builder AS runtime\n')
+            self.assertNotIn('missing-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_escape_directive_continuation_cannot_spoof_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('# escape=`\nFROM alpine:3.21 AS safe\nUSER 1000\n'
+                                  'FROM scratch\nUSER root\nRUN echo `\nFROM safe\n')
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_final_stage_user_overrides_inherited_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21 AS builder\nUSER 1000:1000\n'
+                                  'FROM builder AS runtime\nUSER root:root\n')
+            self.assertIn('root-final-user', policy.check_dockerfile(dockerfile))
+
+    def test_non_root_user_with_group_is_allowed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.21\nUSER 1000:0\n')
+            self.assertNotIn('root-final-user', policy.check_dockerfile(dockerfile))
+
 class ToolCustody(unittest.TestCase):
     def test_checksum_mismatch_rejects_executable(self):
         with self.assertRaisesRegex(ValueError,'checksum'):install.payload(b'modified',{'sha256':'0'*64})
@@ -182,6 +327,17 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('%T',provenance)
         self.assertIn('grep -qx',provenance)
         self.assertIn('HEAD^2',provenance)
+    def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
+        provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
+        self.assertIn('sync/development-to-staging-zap-retirement-20261101',provenance)
+        self.assertIn('5db2589b44f996329168255958ecf3eb321eff1b',provenance)
+        self.assertIn('sync/staging-to-main-20261101',provenance)
+        self.assertIn('ec651145b1e4571e946fe84bcaf1ef38aabdc172',provenance)
+        self.assertIn('git merge-base --is-ancestor "origin/$base" "$commit"',provenance)
+        self.assertIn('origin/${source_branch}^{tree}',provenance)
+        self.assertIn('require_one_time_sync "$head" staging',provenance)
+        self.assertIn('require_one_time_sync "$head" main',provenance)
+
     def test_development_is_plan_only(self):
         validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]
         before,after=validation.split('if [ "$target" = "development" ]',1)
