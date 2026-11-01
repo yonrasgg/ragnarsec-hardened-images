@@ -41,6 +41,7 @@ pipeline {
         'ragnarsec-iac',
         'ragnarsec-minio',
         'ragnarsec-nginx',
+        'ragnarsec-nginx-proxy-manager',
         'ragnarsec-node-exporter',
         'ragnarsec-postgres',
         'ragnarsec-postgres-exporter',
