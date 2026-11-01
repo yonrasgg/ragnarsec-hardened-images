@@ -22,6 +22,7 @@ import image_policy as policy  # noqa: E402
 # Default keeps the previous behaviour explicit instead of implicit.
 DEFAULT_PLATFORMS = ('linux/amd64', 'linux/arm64')
 ALLOWED_PLATFORMS = {'linux/amd64': 'amd64', 'linux/arm64': 'arm64'}
+QEMU_HANDLERS = {'amd64': 'qemu-x86_64', 'arm64': 'qemu-aarch64'}
 
 
 def platforms():
@@ -98,9 +99,17 @@ def require_platforms_available(targets):
         arch = ALLOWED_PLATFORMS[platform]
         if arch == native:
             continue
-        marker = Path('/proc/sys/fs/binfmt_misc') / ('qemu-' + arch)
+        marker = Path('/proc/sys/fs/binfmt_misc') / QEMU_HANDLERS[arch]
         if not marker.exists():
             raise ValueError('platform-not-native-and-not-emulated:' + platform)
+
+
+def require_local_parent_builder():
+    """The docker driver shares --load images with dependent FROM instructions."""
+    info = command('docker', 'buildx', 'inspect', capture=True).stdout
+    driver = re.search(r'^Driver:[ \t]*(\S+)[ \t]*$', info, re.M)
+    if not driver or driver.group(1) != 'docker':
+        raise ValueError('builder-must-use-docker-driver')
 
 
 def _build_args(image, tag, platform):
@@ -115,6 +124,7 @@ def validate(selected, tag, output):
         raise ValueError('invalid-image-tag')
     targets = platforms()
     require_platforms_available(targets)
+    require_local_parent_builder()
     command('python3', 'tools/publication_guard.py', '.', '--history')
     output.mkdir(mode=0o700, exist_ok=False)
     receipts = []
@@ -196,8 +206,9 @@ def publish(selected, tag, output):
 
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
-    expected = sorted((i['name'], p) for i in images for p in image_platforms(i, targets))
-    seen = sorted((r['name'], r['platform']) for r in receipts)
+    expected = sorted((i['name'], p, REGISTRY + i['name'] + ':' + tag + '-' + ALLOWED_PLATFORMS[p])
+                      for i in images for p in image_platforms(i, targets))
+    seen = sorted((r['name'], r['platform'], r['ref']) for r in receipts)
     if seen != expected:
         raise ValueError('validation-receipt-mismatch')
 
