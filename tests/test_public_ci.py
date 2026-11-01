@@ -52,50 +52,84 @@ class ImagePlanning(unittest.TestCase):
             with self.assertRaises(ValueError): ci.validate('ragnarsec-base','../bad',Path(tmp)/'out')
             cmd.assert_not_called()
     def test_failed_validation_never_writes_success_receipt(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(ci,'command',side_effect=subprocess.CalledProcessError(1,'hadolint')):
-            p=Path(tmp)/'out'
-            with self.assertRaises(subprocess.CalledProcessError): ci.validate('ragnarsec-base','test',p)
-            self.assertFalse((p/'validated.json').exists())
+        env = {'PLATFORMS': 'linux/amd64'}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(ci.os.environ, env),                 patch.object(ci, 'command', side_effect=subprocess.CalledProcessError(1, 'hadolint')):
+            p = Path(tmp) / 'out'
+            with self.assertRaises(subprocess.CalledProcessError):
+                ci.validate('ragnarsec-base', 'test', p)
+            self.assertFalse((p / 'validated.json').exists())
     def test_publish_disabled_without_enablement(self):
         with patch.dict(ci.os.environ,{},clear=True),patch.object(ci,'command') as cmd:
             with self.assertRaises(ValueError): ci.publish('ragnarsec-base','test',Path('/not/read'))
             cmd.assert_not_called()
+    def _receipt(self, repository, platform, image_id='expected'):
+        suffix = 'arm64' if platform.endswith('arm64') else 'amd64'
+        return {'ref': repository + ':test-' + suffix, 'name': 'ragnarsec-base',
+                'platform': platform, 'id': image_id, 'sbom': 'sbom.json',
+                'sbom_sha256': hashlib.sha256(b'{}').hexdigest()}
+
     def test_tampered_image_never_pushed(self):
+        repository = ci.REGISTRY + 'ragnarsec-base'
         with tempfile.TemporaryDirectory() as tmp:
-            p=Path(tmp);(p/'sbom.json').write_text('{}');(p/'cosign.key').write_text('key')
-            (p/'validated.json').write_text(json.dumps([{'ref':ci.REGISTRY+'ragnarsec-base:test','id':'expected','sbom':'sbom.json','sbom_sha256':hashlib.sha256(b'{}').hexdigest()}]))
-            def fake(*args,capture=False):
-                if args[:2]==('cosign','public-key'):
-                    Path(args[args.index('--outfile')+1]).write_text('pub')
-                return subprocess.CompletedProcess([],0,stdout='changed')
-            with patch.dict(ci.os.environ,{'PUBLICATION_ENABLED':'true','COSIGN_KEY':str(p/'cosign.key')}),patch.object(ci,'command',side_effect=fake) as cmd:
-                with self.assertRaisesRegex(ValueError,'image-changed'):ci.publish('ragnarsec-base','test',p)
-                self.assertFalse(any(c.args[:2]==('docker','push') for c in cmd.call_args_list))
-    def test_publication_verifies_with_a_derived_public_key(self):
-        digest='sha256:'+'a'*64
-        repository=ci.REGISTRY+'ragnarsec-base'
+            p = Path(tmp)
+            (p / 'sbom.json').write_text('{}')
+            (p / 'cosign.key').write_text('key')
+            (p / 'validated.json').write_text(json.dumps([self._receipt(repository, 'linux/amd64')]))
+
+            def fake(*args, capture=False):
+                if args[:2] == ('cosign', 'public-key'):
+                    Path(args[args.index('--outfile') + 1]).write_text('pub')
+                    return subprocess.CompletedProcess([], 0, stdout='')
+                if args[:3] == ('docker', 'image', 'inspect'):
+                    return subprocess.CompletedProcess([], 0, stdout='changed')
+                return subprocess.CompletedProcess([], 0, stdout='')
+
+            env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
+                   'PLATFORMS': 'linux/amd64'}
+            with patch.dict(ci.os.environ, env), patch.object(ci, 'command', side_effect=fake) as cmd:
+                with self.assertRaisesRegex(ValueError, 'image-changed'):
+                    ci.publish('ragnarsec-base', 'test', p)
+                self.assertFalse(any(c.args[:2] == ('docker', 'push') for c in cmd.call_args_list))
+
+    def test_publication_promotes_validated_images_and_signs_platforms(self):
+        repository = ci.REGISTRY + 'ragnarsec-base'
+        index_digest = 'sha256:' + 'a' * 64
+        platform_digest = 'sha256:' + 'b' * 64
         with tempfile.TemporaryDirectory() as tmp:
-            p=Path(tmp);(p/'sbom.json').write_text('{}');(p/'cosign.key').write_text('key')
-            (p/'validated.json').write_text(json.dumps([{'ref':repository+':test','id':'expected','sbom':'sbom.json','sbom_sha256':hashlib.sha256(b'{}').hexdigest()}]))
-            def fake(*args,capture=False):
-                if args[:2]==('cosign','public-key'):
-                    Path(args[args.index('--outfile')+1]).write_text('pub')
-                    return subprocess.CompletedProcess([],0,stdout='')
-                if args[:3]==('docker','image','inspect'):
+            p = Path(tmp)
+            (p / 'sbom.json').write_text('{}')
+            (p / 'cosign.key').write_text('key')
+            (p / 'validated.json').write_text(json.dumps([self._receipt(repository, 'linux/amd64')]))
+
+            def fake(*args, capture=False):
+                if args[:2] == ('cosign', 'public-key'):
+                    Path(args[args.index('--outfile') + 1]).write_text('pub')
+                    return subprocess.CompletedProcess([], 0, stdout='')
+                if args[:3] == ('docker', 'image', 'inspect'):
                     if args[3].startswith('--format={{json .RepoDigests}}'):
-                        return subprocess.CompletedProcess([],0,stdout=json.dumps([repository+'@'+digest]))
-                    return subprocess.CompletedProcess([],0,stdout='expected')
-                return subprocess.CompletedProcess([],0,stdout='')
-            with patch.dict(ci.os.environ,{'PUBLICATION_ENABLED':'true','COSIGN_KEY':str(p/'cosign.key')}),patch.object(ci,'command',side_effect=fake) as cmd:
-                ci.publish('ragnarsec-base','test',p)
-            calls=[c.args for c in cmd.call_args_list]
-            verify=[a for a in calls if a[:2] in (('cosign','verify'),('cosign','verify-attestation'))]
-            self.assertEqual(len(verify),2)
-            for args in verify:
-                self.assertEqual(args[args.index('--key')+1],str(p/'cosign.pub'))
-            for args in calls:
-                if args[:2] in (('cosign','sign'),('cosign','attest')):
-                    self.assertEqual(args[args.index('--key')+1],str(p/'cosign.key'))
+                        return subprocess.CompletedProcess([], 0, stdout=json.dumps([repository + '@' + platform_digest]))
+                    return subprocess.CompletedProcess([], 0, stdout='expected')
+                if args[:4] == ('docker', 'buildx', 'imagetools', 'inspect'):
+                    manifest = {'digest': index_digest,
+                                'manifests': [{'platform': {'os': 'linux', 'architecture': 'amd64'},
+                                               'digest': platform_digest}]}
+                    return subprocess.CompletedProcess([], 0, stdout=json.dumps(manifest))
+                return subprocess.CompletedProcess([], 0, stdout='')
+
+            env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
+                   'PLATFORMS': 'linux/amd64'}
+            with patch.dict(ci.os.environ, env), patch.object(ci, 'command', side_effect=fake) as cmd:
+                ci.publish('ragnarsec-base', 'test', p)
+
+            calls = [c.args for c in cmd.call_args_list]
+            self.assertFalse(any(a[:3] == ('docker', 'buildx', 'build') for a in calls))
+            self.assertTrue(any(a[:2] == ('docker', 'push') for a in calls))
+            signed = [a[-1] for a in calls if a[:2] == ('cosign', 'sign')]
+            self.assertIn(repository + '@' + platform_digest, signed)
+            self.assertIn(repository + '@' + index_digest, signed)
+            for a in calls:
+                if a[:2] in (('cosign', 'sign'), ('cosign', 'attest')):
+                    self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class ToolCustody(unittest.TestCase):
     def test_checksum_mismatch_rejects_executable(self):

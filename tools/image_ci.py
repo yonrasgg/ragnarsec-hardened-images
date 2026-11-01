@@ -34,6 +34,21 @@ def platforms():
     return items
 
 
+AMD64_ONLY = {'ragnarsec-zap'}
+
+
+def image_platforms(image, targets):
+    """Platforms this image can actually be built for.
+
+    ZAP publishes a linux/amd64-only archive and its Dockerfile rejects foreign
+    architectures, so requesting arm64 by default would fail the whole build.
+    """
+    selected = [p for p in targets if not (image['name'] in AMD64_ONLY and p != 'linux/amd64')]
+    if not selected:
+        raise ValueError('no-supported-platform-for:' + image['name'])
+    return selected
+
+
 def catalog():
     result = {}
     for dockerfile in sorted(ROOT.glob('*/Dockerfile')) + sorted(ROOT.glob('plane/*/Dockerfile')):
@@ -71,6 +86,20 @@ def command(*args, capture=False):
     return subprocess.run(args, cwd=ROOT, check=True, text=True, capture_output=capture)
 
 
+def require_platforms_available(targets):
+    host = os.uname().machine
+    native = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64', 'amd64': 'amd64'}.get(host)
+    if native is None:
+        raise ValueError('unsupported-host-arch:' + host)
+    for platform in targets:
+        arch = ALLOWED_PLATFORMS[platform]
+        if arch == native:
+            continue
+        marker = Path('/proc/sys/fs/binfmt_misc') / ('qemu-' + arch)
+        if not marker.exists():
+            raise ValueError('platform-not-native-and-not-emulated:' + platform)
+
+
 def _build_args(image, tag, platform):
     return ('--build-arg', 'BASE_TAG=' + tag,
             '--build-arg', 'BUILD_DATE=' + os.environ.get('BUILD_DATE', '1970-01-01T00:00:00Z'),
@@ -82,6 +111,7 @@ def validate(selected, tag, output):
     if not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,119}', tag):
         raise ValueError('invalid-image-tag')
     targets = platforms()
+    require_platforms_available(targets)
     command('python3', 'tools/publication_guard.py', '.', '--history')
     output.mkdir(mode=0o700, exist_ok=False)
     receipts = []
@@ -91,13 +121,15 @@ def validate(selected, tag, output):
         if not test.is_file():
             raise ValueError('missing-structure-test')
         command('hadolint', '--ignore', 'DL3007', image['dockerfile'])
-        for platform in targets:
+        for platform in image_platforms(image, targets):
             suffix = ALLOWED_PLATFORMS[platform]
             ref = REGISTRY + name + ':' + tag + '-' + suffix
             # buildx --load supports one platform per invocation; this keeps the
             # structure test and the scanner honest about the exact bytes.
+            # Parents are tagged with the platform suffix, so BASE_TAG must match
+            # that suffix or dependent recipes would look for a tag never built.
             command('docker', 'buildx', 'build', '--platform', platform, '--load',
-                    '-t', ref, *_build_args(image, tag, platform))
+                    '-t', ref, *_build_args(image, tag + '-' + suffix, platform))
             image_id = command('docker', 'image', 'inspect', '--format={{.Id}}', ref, capture=True).stdout.strip()
             command('container-structure-test', 'test', '--image', ref, '--config', str(test))
             command('trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
@@ -112,35 +144,36 @@ def validate(selected, tag, output):
     print(json.dumps({'validated_images': len(receipts), 'platforms': targets, 'published': False}))
 
 
-def _index_digest(ref):
+def _inspect(ref):
     data = json.loads(command('docker', 'buildx', 'imagetools', 'inspect', ref,
                               '--format', '{{json .Manifest}}', capture=True).stdout)
     digest = data.get('digest')
     if not digest or not re.fullmatch(r'sha256:[a-f0-9]{64}', digest):
         raise ValueError('index-digest-unconfirmed')
-    return ref.rsplit(':', 1)[0] + '@' + digest
-
-
-def _platform_digests(ref):
-    data = json.loads(command('docker', 'buildx', 'imagetools', 'inspect', ref,
-                              '--format', '{{json .Manifest}}', capture=True).stdout)
-    manifests = data.get('manifests') or []
-    result = {}
-    for item in manifests:
+    repository = ref.rsplit(':', 1)[0]
+    per_platform = {}
+    for item in data.get('manifests') or []:
         platform = item.get('platform') or {}
         key = platform.get('os', '') + '/' + platform.get('architecture', '')
         if key in ALLOWED_PLATFORMS and item.get('digest'):
-            result[key] = ref.rsplit(':', 1)[0] + '@' + item['digest']
-    return result
+            per_platform[key] = repository + '@' + item['digest']
+    return repository + '@' + digest, per_platform
 
 
 def publish(selected, tag, output):
+    """Promote the validated per-platform images and assemble the index.
+
+    Nothing is rebuilt here: rebuilding would create bytes that were never
+    scanned or attested. The validated local images are pushed as-is, then an
+    index references their digests.
+    """
     if os.environ.get('PUBLICATION_ENABLED') != 'true':
         raise ValueError('publication-not-enabled')
     key = os.environ.get('COSIGN_KEY')
     if not key or not Path(key).is_file():
         raise ValueError('signing-key-not-configured')
     targets = platforms()
+    require_platforms_available(targets)
     public = output / 'cosign.pub'
     if public.exists():
         public.unlink()
@@ -150,7 +183,7 @@ def publish(selected, tag, output):
 
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
-    expected = sorted((i['name'], p) for i in images for p in targets)
+    expected = sorted((i['name'], p) for i in images for p in image_platforms(i, targets))
     seen = sorted((r['name'], r['platform']) for r in receipts)
     if seen != expected:
         raise ValueError('validation-receipt-mismatch')
@@ -165,27 +198,43 @@ def publish(selected, tag, output):
             raise ValueError('validated-image-changed')
 
     for image in images:
-        ref = REGISTRY + image['name'] + ':' + tag
-        # One push creates the multi-arch index; per-platform receipts were already
-        # built and scanned, so only the index publication happens here.
-        command('docker', 'buildx', 'build', '--platform', ','.join(targets), '--push',
-                '-t', ref, *_build_args(image, tag, targets[0]))
-        index = _index_digest(ref)
-        per_platform = _platform_digests(ref)
-        missing = [p for p in targets if p not in per_platform]
+        refs = {}
+        for r in receipts:
+            if r['name'] != image['name']:
+                continue
+            command('docker', 'push', r['ref'])
+            repository = r['ref'].rsplit(':', 1)[0]
+            digests = json.loads(command('docker', 'image', 'inspect', '--format={{json .RepoDigests}}',
+                                         r['ref'], capture=True).stdout)
+            digest = next((d for d in digests or [] if d.startswith(repository + '@sha256:')), None)
+            if not digest or not re.fullmatch(re.escape(repository) + r'@sha256:[a-f0-9]{64}', digest):
+                raise ValueError('pushed-digest-unconfirmed:' + r['platform'])
+            refs[r['platform']] = digest
+        needed = image_platforms(image, targets)
+        missing = [p for p in needed if p not in refs]
         if missing:
             raise ValueError('platform-digest-missing:' + ','.join(missing))
-        for platform in targets:
+
+        index_ref = REGISTRY + image['name'] + ':' + tag
+        command('docker', 'buildx', 'imagetools', 'create', '--tag', index_ref,
+                *[refs[p] for p in needed])
+        index, per_platform = _inspect(index_ref)
+        for platform in needed:
+            if per_platform.get(platform) != refs[platform]:
+                raise ValueError('index-platform-mismatch:' + platform)
+
+        for platform in needed:
             r = next(x for x in receipts if x['name'] == image['name'] and x['platform'] == platform)
             command('cosign', 'attest', '--yes', '--key', key, '--type', 'cyclonedx',
-                    '--predicate', str(output / r['sbom']), per_platform[platform])
+                    '--predicate', str(output / r['sbom']), refs[platform])
+            command('cosign', 'sign', '--yes', '--key', key, refs[platform])
         command('cosign', 'sign', '--yes', '--key', key, index)
+
         command('cosign', 'verify', '--key', str(public), index)
-        for platform in targets:
-            command('cosign', 'verify', '--key', str(public), per_platform[platform])
-            command('cosign', 'verify-attestation', '--type', 'cyclonedx', '--key', str(public),
-                    per_platform[platform])
-        print('Published index with signatures and attestations: ' + index)
+        for platform in needed:
+            command('cosign', 'verify', '--key', str(public), refs[platform])
+            command('cosign', 'verify-attestation', '--type', 'cyclonedx', '--key', str(public), refs[platform])
+        print('Published validated index with signatures and attestations: ' + index)
 
 
 def main():
