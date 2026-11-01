@@ -15,6 +15,7 @@ patching process, usage contract and the status of validation evidence.
 - [iac](iac/README.md): Infrastructure-as-code validation and authoring tools.
 - [minio](minio/README.md): S3-compatible object storage software.
 - [nginx](nginx/README.md): HTTP server with a generic runtime-mounted TLS example.
+- [nginx-proxy-manager](nginx-proxy-manager/README.md): Reverse proxy with a web administration UI.
 - [node-exporter](node-exporter/README.md): Host metrics exporter; host access must be reviewed by consumers.
 - [postgres](postgres/README.md): PostgreSQL database runtime.
 - [postgres-exporter](postgres-exporter/README.md): PostgreSQL metrics exporter.
