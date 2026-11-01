@@ -2,7 +2,6 @@ import hashlib
 import importlib.util
 import io
 import json
-import os
 import subprocess
 import tarfile
 import tempfile
@@ -44,7 +43,8 @@ class ImagePlanning(unittest.TestCase):
 
     def test_all_recipes_and_multistage_parents_have_closed_plans(self):
         images = ci.catalog()
-        self.assertEqual(len(images),23)
+        self.assertEqual(len(images),22)
+        self.assertNotIn('ragnarsec-zap', images)
         for selected in images:
             seen = set()
             for image in ci.plan(selected):
@@ -276,22 +276,6 @@ class DockerfilePolicy(unittest.TestCase):
             dockerfile.write_text('FROM alpine:3.21\nUSER 1000:0\n')
             self.assertNotIn('root-final-user', policy.check_dockerfile(dockerfile))
 
-class ZapEntrypoint(unittest.TestCase):
-    def test_api_key_checks_remain_enabled_with_runtime_key(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            probe = Path(tmp) / 'probe.sh'
-            probe.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
-            probe.chmod(0o700)
-            env = os.environ.copy()
-            env.update({'ZAP_PATH': str(probe), 'ZAP_API_KEY': 'dummy-test-key'})
-            command = subprocess.run(['sh', str(ROOT / 'zap/entrypoint.sh')], env=env,
-                                     check=True, text=True, capture_output=True)
-            args = command.stdout.splitlines()
-            self.assertIn('-config', args)
-            self.assertIn('api.disablekey=false', args)
-            self.assertIn('api.key=dummy-test-key', args)
-            self.assertLess(args.index('api.disablekey=false'), args.index('api.key=dummy-test-key'))
-
 class ToolCustody(unittest.TestCase):
     def test_checksum_mismatch_rejects_executable(self):
         with self.assertRaisesRegex(ValueError,'checksum'):install.payload(b'modified',{'sha256':'0'*64})
@@ -343,13 +327,16 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('%T',provenance)
         self.assertIn('grep -qx',provenance)
         self.assertIn('HEAD^2',provenance)
-    def test_one_time_staging_sync_requires_exact_tree_and_frozen_base(self):
+    def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
-        self.assertIn('sync/development-to-staging-20261101',provenance)
-        self.assertIn('1a851db5b14d3498d492ba5fb750995b716be080',provenance)
-        self.assertIn('git merge-base --is-ancestor origin/staging "$commit"',provenance)
-        self.assertIn('origin/development^{tree}',provenance)
-        self.assertIn('require_one_time_sync "$head"',provenance)
+        self.assertIn('sync/development-to-staging-zap-retirement-20261101',provenance)
+        self.assertIn('5db2589b44f996329168255958ecf3eb321eff1b',provenance)
+        self.assertIn('sync/staging-to-main-20261101',provenance)
+        self.assertIn('ec651145b1e4571e946fe84bcaf1ef38aabdc172',provenance)
+        self.assertIn('git merge-base --is-ancestor "origin/$base" "$commit"',provenance)
+        self.assertIn('origin/${source_branch}^{tree}',provenance)
+        self.assertIn('require_one_time_sync "$head" staging',provenance)
+        self.assertIn('require_one_time_sync "$head" main',provenance)
 
     def test_development_is_plan_only(self):
         validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]

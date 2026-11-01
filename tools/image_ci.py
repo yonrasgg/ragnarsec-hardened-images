@@ -38,21 +38,6 @@ def platforms():
     return items
 
 
-AMD64_ONLY = {'ragnarsec-zap'}
-
-
-def image_platforms(image, targets):
-    """Platforms this image can actually be built for.
-
-    ZAP publishes a linux/amd64-only archive and its Dockerfile rejects foreign
-    architectures, so requesting arm64 by default would fail the whole build.
-    """
-    selected = [p for p in targets if not (image['name'] in AMD64_ONLY and p != 'linux/amd64')]
-    if not selected:
-        raise ValueError('no-supported-platform-for:' + image['name'])
-    return selected
-
-
 def catalog():
     result = {}
     for dockerfile in sorted(ROOT.glob('*/Dockerfile')) + sorted(ROOT.glob('plane/*/Dockerfile')):
@@ -140,7 +125,7 @@ def validate(selected, tag, output):
             raise ValueError('dockerfile-policy:' + ','.join(problems))
         elif problems:
             print('POLICY_WARN ' + name + ' ' + ','.join(problems))
-        for platform in image_platforms(image, targets):
+        for platform in targets:
             suffix = ALLOWED_PLATFORMS[platform]
             ref = REGISTRY + name + ':' + tag + '-' + suffix
             # buildx --load supports one platform per invocation; this keeps the
@@ -207,7 +192,7 @@ def publish(selected, tag, output):
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
     expected = sorted((i['name'], p, REGISTRY + i['name'] + ':' + tag + '-' + ALLOWED_PLATFORMS[p])
-                      for i in images for p in image_platforms(i, targets))
+                      for i in images for p in targets)
     seen = sorted((r['name'], r['platform'], r['ref']) for r in receipts)
     if seen != expected:
         raise ValueError('validation-receipt-mismatch')
@@ -234,7 +219,7 @@ def publish(selected, tag, output):
             if not digest or not re.fullmatch(re.escape(repository) + r'@sha256:[a-f0-9]{64}', digest):
                 raise ValueError('pushed-digest-unconfirmed:' + r['platform'])
             refs[r['platform']] = digest
-        needed = image_platforms(image, targets)
+        needed = targets
         missing = [p for p in needed if p not in refs]
         if missing:
             raise ValueError('platform-digest-missing:' + ','.join(missing))
