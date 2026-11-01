@@ -20,7 +20,7 @@ ci, install = load('image_ci'), load('install_ci_tools')
 class ImagePlanning(unittest.TestCase):
     def test_all_recipes_and_multistage_parents_have_closed_plans(self):
         images = ci.catalog()
-        self.assertEqual(len(images),21)
+        self.assertEqual(len(images),23)
         for selected in images:
             seen = set()
             for image in ci.plan(selected):

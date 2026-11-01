@@ -1,0 +1,17 @@
+{
+  "ragnarsec-base": {
+    "alpine_digest": "sha256:ee16d92f96db08d9d2d07da48555a27f3a69d8f0759021dbc601195ed0d2b5bd",
+    "packages": {
+      "ca-certificates": "20261020-r0",
+      "tzdata": "2026e-r0",
+      "tini": "0.19.0-r3"
+    }
+  },
+  "ragnarsec-base-min": {
+    "alpine_digest": "sha256:ee16d92f96db08d9d2d07da48555a27f3a69d8f0759021dbc601195ed0d2b5bd",
+    "packages": {
+      "ca-certificates": "20261020-r0",
+      "tini": "0.19.0-r3"
+    }
+  }
+}

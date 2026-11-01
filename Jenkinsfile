@@ -34,6 +34,7 @@ pipeline {
       choices: [
         'ragnarsec-alertmanager',
         'ragnarsec-base',
+        'ragnarsec-base-min',
         'ragnarsec-builder',
         'ragnarsec-buildkit',
         'ragnarsec-clamav',
@@ -52,6 +53,7 @@ pipeline {
         'ragnarsec-redis-exporter',
         'ragnarsec-trivy',
         'ragnarsec-valkey',
+        'ragnarsec-wgdashboard',
         'ragnarsec-zap'
       ],
       description: 'One image; only its required build parents are included.'

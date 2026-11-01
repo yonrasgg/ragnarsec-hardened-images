@@ -8,6 +8,7 @@ patching process, usage contract and the status of validation evidence.
 
 - [alertmanager](alertmanager/README.md): Alert routing and notification processing.
 - [base](base/README.md): Minimal shared Linux runtime for image recipes.
+- [base-min](base-min/README.md): Shell-less minimal runtime floor for hardened consumers.
 - [builder](builder/README.md): Build tooling for Python and JavaScript projects.
 - [buildkit](buildkit/README.md): Container image build service.
 - [clamav](clamav/README.md): Malware scanning tooling.
@@ -26,6 +27,7 @@ patching process, usage contract and the status of validation evidence.
 - [redis-exporter](redis-exporter/README.md): Redis-compatible metrics exporter.
 - [trivy](trivy/README.md): Container and filesystem security scanning tooling.
 - [valkey](valkey/README.md): Valkey key-value runtime.
+- [wgdashboard](wgdashboard/README.md): WireGuard web UI with a read-only deployment contract.
 - [zap](zap/README.md): Web application security testing tooling; targets require authorization.
 
 Plane component recipes are temporarily quarantined while their upstream build inputs

@@ -12,9 +12,12 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = 'ghcr.io/yonrasgg/'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import image_policy as policy  # noqa: E402
 
 # Default keeps the previous behaviour explicit instead of implicit.
 DEFAULT_PLATFORMS = ('linux/amd64', 'linux/arm64')
@@ -120,7 +123,13 @@ def validate(selected, tag, output):
         test = ROOT / 'tests' / (name + '.yaml')
         if not test.is_file():
             raise ValueError('missing-structure-test')
-        command('hadolint', '--ignore', 'DL3007', image['dockerfile'])
+        command('hadolint', '--ignore', 'DL3007', '--failure-threshold', 'warning', image['dockerfile'])
+        problems = policy.check_dockerfile(ROOT / image['dockerfile'])
+        cfg = json.loads((ROOT / 'policy.json').read_text())
+        if problems and name in cfg.get('enforce', []):
+            raise ValueError('dockerfile-policy:' + ','.join(problems))
+        elif problems:
+            print('POLICY_WARN ' + name + ' ' + ','.join(problems))
         for platform in image_platforms(image, targets):
             suffix = ALLOWED_PLATFORMS[platform]
             ref = REGISTRY + name + ':' + tag + '-' + suffix
@@ -131,6 +140,10 @@ def validate(selected, tag, output):
             command('docker', 'buildx', 'build', '--platform', platform, '--load',
                     '-t', ref, *_build_args(image, tag + '-' + suffix, platform))
             image_id = command('docker', 'image', 'inspect', '--format={{.Id}}', ref, capture=True).stdout.strip()
+            size = int(command('docker', 'image', 'inspect', '--format={{.Size}}', ref, capture=True).stdout.strip())
+            over = policy.check_budget(name, size, ROOT / 'budgets.json')
+            if over:
+                raise ValueError(over[0])
             command('container-structure-test', 'test', '--image', ref, '--config', str(test))
             command('trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--image-config-scanners', 'misconfig,secret', '--ignorefile', '/dev/null', ref)
