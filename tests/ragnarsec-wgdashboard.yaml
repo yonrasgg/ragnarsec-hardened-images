@@ -1,0 +1,23 @@
+schemaVersion: 2.0.0
+metadataTest:
+  exposedPorts: ["10086"]
+fileExistenceTests:
+  - name: 'Entrypoint'
+    path: '/entrypoint.sh'
+    shouldExist: true
+  - name: 'WireGuard tools'
+    path: '/usr/bin/wg'
+    shouldExist: true
+  - name: 'Python runtime'
+    path: '/usr/local/bin/python3'
+    shouldExist: true
+commandTests:
+  - name: 'wg available'
+    command: '/usr/bin/wg'
+    args: ['--version']
+    exitCode: 0
+    expectedOutput: ['wireguard-tools']
+  - name: 'python available'
+    command: '/usr/local/bin/python3'
+    args: ['--version']
+    exitCode: 0

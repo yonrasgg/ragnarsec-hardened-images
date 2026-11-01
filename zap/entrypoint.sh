@@ -12,5 +12,6 @@ exec "${ZAP_PATH:-/zap/zap.sh}" \
     -daemon \
     -host "${ZAP_HOST:-0.0.0.0}" \
     -port "${ZAP_PORT:-8080}" \
+    -config "api.disablekey=false" \
     -config "api.key=${ZAP_API_KEY}" \
     "$@"

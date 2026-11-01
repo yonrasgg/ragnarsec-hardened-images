@@ -12,13 +12,17 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = 'ghcr.io/yonrasgg/'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import image_policy as policy  # noqa: E402
 
 # Default keeps the previous behaviour explicit instead of implicit.
 DEFAULT_PLATFORMS = ('linux/amd64', 'linux/arm64')
 ALLOWED_PLATFORMS = {'linux/amd64': 'amd64', 'linux/arm64': 'arm64'}
+QEMU_HANDLERS = {'amd64': 'qemu-x86_64', 'arm64': 'qemu-aarch64'}
 
 
 def platforms():
@@ -95,9 +99,17 @@ def require_platforms_available(targets):
         arch = ALLOWED_PLATFORMS[platform]
         if arch == native:
             continue
-        marker = Path('/proc/sys/fs/binfmt_misc') / ('qemu-' + arch)
+        marker = Path('/proc/sys/fs/binfmt_misc') / QEMU_HANDLERS[arch]
         if not marker.exists():
             raise ValueError('platform-not-native-and-not-emulated:' + platform)
+
+
+def require_local_parent_builder():
+    """The docker driver shares --load images with dependent FROM instructions."""
+    info = command('docker', 'buildx', 'inspect', capture=True).stdout
+    driver = re.search(r'^Driver:[ \t]*(\S+)[ \t]*$', info, re.M)
+    if not driver or driver.group(1) != 'docker':
+        raise ValueError('builder-must-use-docker-driver')
 
 
 def _build_args(image, tag, platform):
@@ -112,6 +124,7 @@ def validate(selected, tag, output):
         raise ValueError('invalid-image-tag')
     targets = platforms()
     require_platforms_available(targets)
+    require_local_parent_builder()
     command('python3', 'tools/publication_guard.py', '.', '--history')
     output.mkdir(mode=0o700, exist_ok=False)
     receipts = []
@@ -120,7 +133,13 @@ def validate(selected, tag, output):
         test = ROOT / 'tests' / (name + '.yaml')
         if not test.is_file():
             raise ValueError('missing-structure-test')
-        command('hadolint', '--ignore', 'DL3007', image['dockerfile'])
+        command('hadolint', '--ignore', 'DL3007', '--failure-threshold', 'warning', image['dockerfile'])
+        problems = policy.check_dockerfile(ROOT / image['dockerfile'])
+        cfg = json.loads((ROOT / 'policy.json').read_text())
+        if problems and name in cfg.get('enforce', []):
+            raise ValueError('dockerfile-policy:' + ','.join(problems))
+        elif problems:
+            print('POLICY_WARN ' + name + ' ' + ','.join(problems))
         for platform in image_platforms(image, targets):
             suffix = ALLOWED_PLATFORMS[platform]
             ref = REGISTRY + name + ':' + tag + '-' + suffix
@@ -131,6 +150,10 @@ def validate(selected, tag, output):
             command('docker', 'buildx', 'build', '--platform', platform, '--load',
                     '-t', ref, *_build_args(image, tag + '-' + suffix, platform))
             image_id = command('docker', 'image', 'inspect', '--format={{.Id}}', ref, capture=True).stdout.strip()
+            size = int(command('docker', 'image', 'inspect', '--format={{.Size}}', ref, capture=True).stdout.strip())
+            over = policy.check_budget(name, size, ROOT / 'budgets.json')
+            if over:
+                raise ValueError(over[0])
             command('container-structure-test', 'test', '--image', ref, '--config', str(test))
             command('trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--image-config-scanners', 'misconfig,secret', '--ignorefile', '/dev/null', ref)
@@ -183,8 +206,9 @@ def publish(selected, tag, output):
 
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
-    expected = sorted((i['name'], p) for i in images for p in image_platforms(i, targets))
-    seen = sorted((r['name'], r['platform']) for r in receipts)
+    expected = sorted((i['name'], p, REGISTRY + i['name'] + ':' + tag + '-' + ALLOWED_PLATFORMS[p])
+                      for i in images for p in image_platforms(i, targets))
+    seen = sorted((r['name'], r['platform'], r['ref']) for r in receipts)
     if seen != expected:
         raise ValueError('validation-receipt-mismatch')
 

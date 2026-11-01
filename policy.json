@@ -1,0 +1,4 @@
+{
+  "enforce": ["ragnarsec-base", "ragnarsec-base-min"],
+  "warn": "*"
+}
