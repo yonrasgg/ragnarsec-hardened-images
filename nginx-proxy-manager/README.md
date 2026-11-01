@@ -7,7 +7,8 @@ over TLS. This document describes an image interface, not a deployed system.
 
 ## Build inputs
 
-- Declared `FROM`: `docker.io/jc21/nginx-proxy-manager@sha256:4393e642e233e5efd5adeb7f10918d4aaea71c9ed875b94190273fc8e87f9594`
+- Declared `FROM`: `docker.io/jc21/nginx-proxy-manager:2.16.0@sha256:4393e642e233e5efd5adeb7f10918d4aaea71c9ed875b94190273fc8e87f9594`
+- Upstream version observed in `/app/package.json`: **2.16.0**; `latest` resolves to the same digest at review time.
 - Upstream project: Nginx Proxy Manager (MIT). The wrapper is GPL-3.0.
 - The multi-arch index includes `linux/arm64`; the consumer fleet is mixed
   (`aarch64` and `x86_64`), so both platforms must be validated before promotion.
