@@ -1,0 +1,27 @@
+schemaVersion: 2.0.0
+metadataTest:
+  user: 'root'
+  exposedPorts: ["80", "81", "443"]
+fileExistenceTests:
+  - name: 'Application directory'
+    path: '/app'
+    shouldExist: true
+  - name: 'Data directory'
+    path: '/data'
+    shouldExist: true
+  - name: 'Nginx binary (OpenResty bundle)'
+    path: '/usr/sbin/nginx'
+    shouldExist: true
+commandTests:
+  - name: 'Nginx version'
+    command: 'sh'
+    args: ['-c', 'nginx -v']
+    exitCode: 0
+  - name: 'Node runtime'
+    command: 'sh'
+    args: ['-c', 'node --version']
+    exitCode: 0
+  - name: 'No docker socket baked in'
+    command: 'sh'
+    args: ['-c', 'test ! -S /var/run/docker.sock']
+    exitCode: 0
