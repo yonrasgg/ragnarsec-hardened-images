@@ -111,6 +111,29 @@ pipeline {
             echo "STOP: ${message}" >&2
             exit 2
           }
+          # One-time reconciliation for PR #25. This path expires when staging
+          # advances and requires the exact current development tree and a branch
+          # descended from the frozen staging tip. It does not publish anything.
+          require_one_time_sync() {
+            commit="$1"
+            git fetch --no-tags origin \
+              "+refs/heads/development:refs/remotes/origin/development" \
+              "+refs/heads/staging:refs/remotes/origin/staging"
+            test "$(git rev-parse origin/staging)" = \
+              "1a851db5b14d3498d492ba5fb750995b716be080" || {
+                echo 'STOP: staging base changed; sync exception expired.' >&2
+                exit 2
+              }
+            git merge-base --is-ancestor origin/staging "$commit" || {
+              echo 'STOP: sync branch must descend from staging.' >&2
+              exit 2
+            }
+            test "$(git rev-parse "${commit}^{tree}")" = \
+              "$(git rev-parse 'origin/development^{tree}')" || {
+                echo 'STOP: sync tree differs from current development.' >&2
+                exit 2
+              }
+          }
           target="${CHANGE_TARGET:-$BRANCH_NAME}"
           if [ -n "${CHANGE_TARGET:-}" ]; then
             source="${CHANGE_BRANCH:-}"
@@ -118,11 +141,14 @@ pipeline {
             head="$(git rev-parse --verify HEAD^2 2>/dev/null || git rev-parse HEAD)"
             case "$target" in
               staging)
-                test "$source" = "development" || {
-                  echo 'STOP: staging accepts pull requests only from development.' >&2
+                if [ "$source" = "development" ]; then
+                  require_traceable development "$head" 'staging pull request is not traceable to development.'
+                elif [ "$source" = "sync/development-to-staging-20261101" ]; then
+                  require_one_time_sync "$head"
+                else
+                  echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                   exit 2
-                }
-                require_traceable development "$head" 'staging pull request is not traceable to development.'
+                fi
                 ;;
               main)
                 test "$source" = "staging" || {
