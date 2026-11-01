@@ -19,10 +19,14 @@ re-review the digest for every release.
 ## Hardening declared
 
 - Debian packages inherited from upstream are upgraded during build, then caches removed.
-- No `USER` override: the upstream entrypoint requires root to bind 80/443 and then
-  drops privileges. Runtime hardening belongs to the consumer: `no-new-privileges`,
-  `cap_drop` of everything except the caps the entrypoint needs, no Docker socket
-  and no privileged mode.
+- No `USER` override: upstream initialization expects to start as root.
+- **PUID/PGID default to `0`**, so nginx and the Node backend run as root unless
+  nonzero IDs are configured. Non-root operation requires explicit `PUID`/`PGID`,
+  a validation that the effective uid is not 0, and accepting that binding 80/443
+  still needs the root master or `NET_BIND_SERVICE`.
+- Runtime hardening belongs to the consumer: `no-new-privileges`, `cap_drop` of
+  everything except the caps the entrypoint needs, no Docker socket and no
+  privileged mode.
 - No credentials, certificates, environment files or inventories are embedded.
 - Observed on a local amd64 build (image id `a12936ca0cb24b4af727ec0cf4e43945cdc0a89c39c60287864203495babdfbd`):
   effective user `root`, `nginx` is OpenResty at `/usr/sbin/nginx`, Node v22,

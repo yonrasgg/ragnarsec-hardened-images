@@ -30,12 +30,15 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Upstream image runs nginx as root to bind 80/443 and drop privileges to www-data.
-# Hardening is therefore applied at runtime by the consumer:
+# Upstream initializes as root. PUID/PGID default to 0, so nginx and the backend
+# keep root privileges unless nonzero IDs are configured and validated.
+# Non-root operation therefore requires explicit PUID/PGID and a runtime check of
+# the effective uid; binding 80/443 still needs the root master or NET_BIND_SERVICE.
+# Hardening is applied at runtime by the consumer:
 #   - no-new-privileges
 #   - cap_drop of everything except NET_BIND_SERVICE/CHOWN/SETUID/SETGID
 #   - no docker socket, no privileged mode
-# Do not add USER here: it breaks the upstream entrypoint and privilege drop.
+# Do not add USER here: upstream initialization expects to start as root.
 
 EXPOSE 80 81 443
 
