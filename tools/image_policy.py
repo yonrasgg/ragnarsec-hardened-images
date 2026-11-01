@@ -10,6 +10,7 @@ UPGRADE = re.compile(r'\b(?:apk|apt-get|apt)\s+upgrade\b')
 ADD_INSTRUCTION = re.compile(r'^\s*ADD\s', re.M)
 LATEST_TAG = re.compile(r'^\s*FROM\s+\S+:latest(?:\s|$)', re.M)
 USER_INSTRUCTION = re.compile(r'^\s*USER\s+(\S+)', re.M)
+FROM_INSTRUCTION = re.compile(r'^[ \t]*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?', re.I)
 EXCEPTION = re.compile(r'#\s*policy:\s*allow-(upgrade|root)\s+(\S.{0,120})')
 
 
@@ -19,6 +20,32 @@ def _strip_comments(text):
 
 def _exceptions(text):
     return {kind: reason.strip() for kind, reason in EXCEPTION.findall(text)}
+
+
+def _final_stage_user(body):
+    """Resolve USER in the runtime stage, including inheritance from local aliases.
+
+    External image defaults cannot be verified from Dockerfile text and require an
+    explicit USER (or a documented allow-root exception).
+    """
+    stage_users = {}
+    current_user = None
+    current_alias = None
+    for line in body.splitlines():
+        stage = FROM_INSTRUCTION.match(line)
+        if stage:
+            source, alias = stage.groups()
+            current_user = stage_users.get(source.lower())
+            current_alias = alias.lower() if alias else None
+            if current_alias:
+                stage_users[current_alias] = current_user
+            continue
+        user = USER_INSTRUCTION.match(line)
+        if user:
+            current_user = user.group(1)
+            if current_alias:
+                stage_users[current_alias] = current_user
+    return current_user
 
 
 def check_dockerfile(path):
@@ -38,11 +65,10 @@ def check_dockerfile(path):
         problems.append('add-instead-of-copy')
     if LATEST_TAG.search(body):
         problems.append('latest-tag-in-from')
-    users = USER_INSTRUCTION.findall(body)
-    final_user = users[-1] if users else None
+    final_user = _final_stage_user(body)
     if final_user is None and 'root' not in allowed:
         problems.append('missing-final-user')
-    elif final_user in ('0', 'root') and 'root' not in allowed:
+    elif final_user is not None and final_user.split(':', 1)[0] in ('0', 'root') and 'root' not in allowed:
         problems.append('root-final-user')
     return problems
 

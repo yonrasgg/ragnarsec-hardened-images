@@ -14,6 +14,8 @@
 // Job requirements (owned by Jenkins, not by this repository):
 // - multibranch pipeline with a non-shallow checkout;
 // - an agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
+// - a selected buildx builder using the `docker` driver so validated local
+//   parent tags are visible to dependent builds before publication;
 // - credentials id `ragnarsec-registry` (username/password) for publication;
 // - credentials ids `ragnarsec-cosign-key` (file) and `ragnarsec-cosign-password`
 //   (secret text) for digest signing and verification;
