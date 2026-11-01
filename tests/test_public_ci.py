@@ -343,6 +343,14 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('%T',provenance)
         self.assertIn('grep -qx',provenance)
         self.assertIn('HEAD^2',provenance)
+    def test_one_time_staging_sync_requires_exact_tree_and_frozen_base(self):
+        provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
+        self.assertIn('sync/development-to-staging-20261101',provenance)
+        self.assertIn('1a851db5b14d3498d492ba5fb750995b716be080',provenance)
+        self.assertIn('git merge-base --is-ancestor origin/staging "$commit"',provenance)
+        self.assertIn('origin/development^{tree}',provenance)
+        self.assertIn('require_one_time_sync "$head"',provenance)
+
     def test_development_is_plan_only(self):
         validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]
         before,after=validation.split('if [ "$target" = "development" ]',1)

@@ -31,7 +31,7 @@ no in-place upgrade path by design; `apk upgrade` is forbidden by policy.
 ## Controls and evidence
 
 Required before promotion: container-structure test, size budget check, trivy
-scan, SBOM and signed digest. 
+scan, SBOM and signed digest.
 
 No built-image pass is claimed in this document. Definitions are not proof of a
 passing build.
