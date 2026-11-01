@@ -61,6 +61,11 @@ pipeline {
       description: 'Publish validated digests. Requires main and approval.'
     )
     string(
+      name: 'PLATFORMS',
+      defaultValue: 'linux/amd64,linux/arm64',
+      description: 'Comma-separated platforms validated and published by this build.'
+    )
+    string(
       name: 'IMAGE_TAG_SUFFIX',
       defaultValue: '',
       description: 'Optional suffix appended to the generated image tag.'
@@ -69,6 +74,7 @@ pipeline {
 
   environment {
     PYTHONDONTWRITEBYTECODE = '1'
+    PLATFORMS = "${params.PLATFORMS}"
     CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"
     CI_TOOLS = "${WORKSPACE_TMP}/ragnarsec-ci/tools"
     VALIDATION_OUTPUT = "${WORKSPACE_TMP}/ragnarsec-ci/image-validation"
