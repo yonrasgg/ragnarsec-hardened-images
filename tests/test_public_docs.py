@@ -6,6 +6,15 @@ ROOT = Path(__file__).parents[1]
 HEADINGS = ('Purpose', 'Build inputs', 'Hardening declared', 'Patching', 'Controls and evidence', 'Using the image', 'License')
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_security_policy_has_private_reporting_route_not_template_placeholders(self):
+        policy = (ROOT / 'SECURITY.md').read_text()
+        self.assertIn('https://github.com/yonrasgg/ragnarsec-hardened-images/security/advisories/new', policy)
+        self.assertIn('privately', policy)
+        self.assertIn('acknowledg', policy.lower())
+        self.assertIn('declined', policy.lower())
+        self.assertNotIn('Use this section to tell people', policy)
+        self.assertNotIn('5.1.x', policy)
+
     def test_every_service_readme_has_a_reusable_contract(self):
         paths = list(ROOT.glob('*/README.md'))
         self.assertGreater(len(paths), 15)

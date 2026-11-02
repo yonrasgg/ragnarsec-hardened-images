@@ -7,9 +7,9 @@ import re
 from pathlib import Path
 
 UPGRADE = re.compile(r'\b(?:apk|apt-get|apt)\s+upgrade\b')
-ADD_INSTRUCTION = re.compile(r'^\s*ADD\s', re.M)
-LATEST_TAG = re.compile(r'^\s*FROM\s+\S+:latest(?:\s|$)', re.M)
-USER_INSTRUCTION = re.compile(r'^\s*USER\s+(\S+)', re.M)
+ADD_INSTRUCTION = re.compile(r'^\s*ADD\s', re.M | re.I)
+LATEST_TAG = re.compile(r'^\s*FROM\s+\S+:latest(?:\s|$)', re.M | re.I)
+USER_INSTRUCTION = re.compile(r'^\s*USER\s+(\S+)', re.M | re.I)
 FROM_INSTRUCTION = re.compile(r'^[ \t]*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?', re.I)
 EXCEPTION = re.compile(r'#\s*policy:\s*allow-(upgrade|root)\s+(\S.{0,120})')
 ESCAPE_DIRECTIVE = re.compile(r'^#\s*escape\s*=\s*([`\\])\s*$', re.I)
@@ -97,13 +97,14 @@ def check_dockerfile(path):
     """
     text = Path(path).read_text()
     body = _strip_comments(text)
+    instructions = list(_logical_instructions(text))
     allowed = _exceptions(text)
     problems = []
     if UPGRADE.search(body) and 'upgrade' not in allowed:
         problems.append('forbidden-upgrade-instruction')
-    if ADD_INSTRUCTION.search(body):
+    if any(ADD_INSTRUCTION.match(instruction) for instruction in instructions):
         problems.append('add-instead-of-copy')
-    if LATEST_TAG.search(body):
+    if any(LATEST_TAG.match(instruction) for instruction in instructions):
         problems.append('latest-tag-in-from')
     final_user = _final_stage_user(text)
     if final_user is None and 'root' not in allowed:

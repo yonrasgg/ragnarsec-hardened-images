@@ -116,7 +116,34 @@ class ImagePlanning(unittest.TestCase):
             self.assertEqual(len(builds), 1)
             self.assertIn('--provenance=false', builds[0])
             self.assertIn('--sbom=false', builds[0])
+            scans = [call.args for call in cmd.call_args_list
+                     if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
+            self.assertEqual(len(scans), 1)
+            self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
             self.assertTrue((output / 'validated.json').is_file())
+
+    def test_base_min_sbom_requires_only_shipped_apk_packages(self):
+        expected = ci.BASE_MIN_APK_PACKAGES
+        components = [{'name': 'alpine', 'version': '3.21.9'}] + [
+            {'name': name, 'version': '1-r0',
+             'purl': 'pkg:apk/alpine/' + name + '@1-r0?arch=x86_64&distro=3.21.9'}
+            for name in sorted(expected)]
+        with tempfile.TemporaryDirectory() as tmp:
+            sbom = Path(tmp) / 'base-min.cdx.json'
+            for records, rejected in (
+                (components, False),
+                ([c for c in components if c['name'] != 'musl'], True),
+                (components + [{'name': 'apk-tools', 'version': '1-r0',
+                                'purl': 'pkg:apk/alpine/apk-tools@1-r0'}], True),
+                ([c for c in components if c['name'] != 'alpine'], True),
+            ):
+                with self.subTest(packages=[c['name'] for c in records]):
+                    sbom.write_text(json.dumps({'components': records}))
+                    if rejected:
+                        with self.assertRaisesRegex(ValueError, 'base-min-sbom-package-inventory-mismatch'):
+                            ci.require_base_min_inventory(sbom)
+                    else:
+                        ci.require_base_min_inventory(sbom)
 
     def test_failed_validation_never_writes_success_receipt(self):
         env = {'PLATFORMS': 'linux/amd64'}
@@ -227,6 +254,32 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_heredoc_text_is_not_an_add_or_from_instruction(self):
+        for body in ('add table inet filter', 'from alpine:latest'):
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\n' + body + '\nEOF\nUSER 1000\n')
+                self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
+    def test_real_instructions_after_heredoc_still_trigger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\nadd table inet filter\nEOF\n'
+                                  'aDd payload /payload\nfRoM alpine:latest\nUSER 1000\n')
+            self.assertIn('add-instead-of-copy', policy.check_dockerfile(dockerfile))
+            self.assertIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+
+    def test_mixed_case_dockerfile_opcodes_cannot_bypass_policy(self):
+        for dockerfile_text, violation in (
+            ('fRoM alpine:3.21\nUsEr 1000\nuSeR root\n', 'root-final-user'),
+            ('FROM alpine:3.21\naDd file /file\nUSER 1000\n', 'add-instead-of-copy'),
+            ('fRoM alpine:latest\nUSER 1000\n', 'latest-tag-in-from'),
+        ):
+            with self.subTest(violation=violation), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text(dockerfile_text)
+                self.assertIn(violation, policy.check_dockerfile(dockerfile))
+
     def test_root_user_with_group_requires_exception(self):
         for user in ('0:0', 'root:root', '0:1000', 'root:1000'):
             with self.subTest(user=user), tempfile.TemporaryDirectory() as tmp:

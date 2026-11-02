@@ -8,7 +8,7 @@ describes an image interface, not a deployed system.
 
 ## Build inputs
 
-- `FROM alpine:3.21@sha256:ee16d92f96db08d9d2d07da48555a27f3a69d8f0759021dbc601195ed0d2b5bd`
+- `FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a`
   (build stage only; the final stage is `scratch`).
 - Pinned packages: `ca-certificates=20261020-r0`, `tini=0.19.0-r3`.
 - No `apk upgrade`: patching means moving to a new Alpine digest and re-pinning.
@@ -16,7 +16,9 @@ describes an image interface, not a deployed system.
 ## Hardening declared
 
 - Final stage is `scratch`: no shell, no `apk`, no busybox.
-- Only `ca-certificates`, musl libc loader, `tini` and passwd/group entries.
+- Only CA trust files, musl libc loader, `tini`, passwd/group, Alpine release
+  identification and a filtered APK database for packages represented by these
+  runtime files. The builder's shell and package manager are not copied.
 - Runs as `1000:1000`; `/sbin/nologin` is a string in `passwd`, not a binary.
 - No credentials, no TLS material, no inventories.
 
@@ -31,7 +33,10 @@ no in-place upgrade path by design; `apk upgrade` is forbidden by policy.
 ## Controls and evidence
 
 Required before promotion: container-structure test, size budget check, trivy
-scan, SBOM and signed digest.
+scan, SBOM with the five runtime APK packages, and signed digest. Alpine 3.21
+reached its published end of support on 2026-11-01; the build stage is now
+pinned to Alpine 3.24.3. Validation on both architectures remains necessary
+before publication. The Trivy gate also rejects end-of-support OS releases.
 
 No built-image pass is claimed in this document. Definitions are not proof of a
 passing build.
