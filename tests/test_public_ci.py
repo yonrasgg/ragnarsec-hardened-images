@@ -478,8 +478,10 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('HEAD^2',provenance)
     def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
-        self.assertIn('sync/development-to-staging-zap-retirement-20261101',provenance)
-        self.assertIn('5db2589b44f996329168255958ecf3eb321eff1b',provenance)
+        self.assertIn('sync/development-to-staging-20261102',provenance)
+        self.assertIn('bff48d8540571196ec1227d923a0d8d0fc943271',provenance)
+        self.assertNotIn('sync/development-to-staging-zap-retirement-20261101',provenance)
+        self.assertNotIn('5db2589b44f996329168255958ecf3eb321eff1b',provenance)
         self.assertIn('sync/staging-to-main-20261101',provenance)
         self.assertIn('ec651145b1e4571e946fe84bcaf1ef38aabdc172',provenance)
         self.assertIn('git merge-base --is-ancestor "origin/$base" "$commit"',provenance)
