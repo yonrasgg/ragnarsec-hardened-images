@@ -254,6 +254,29 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_shared_base_uses_supported_alpine_pin_and_matching_manifest(self):
+        base = (ROOT / 'base' / 'Dockerfile').read_text()
+        versions = json.loads((ROOT / 'versions.json').read_text())
+        digest = 'sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a'
+        self.assertIn('FROM alpine:3.24.3@' + digest, base)
+        self.assertEqual(versions['ragnarsec-base']['alpine_digest'], digest)
+        self.assertEqual(versions['ragnarsec-base-min']['alpine_digest'], digest)
+        for name, version in versions['ragnarsec-base']['packages'].items():
+            self.assertIn(name + '=' + version, base)
+
+    def test_base_consumers_do_not_advertise_obsolete_alpine_release(self):
+        for name in ('nginx', 'python-base'):
+            with self.subTest(name=name):
+                self.assertNotIn('Alpine 3.21', (ROOT / name / 'Dockerfile').read_text())
+
+    def test_base_consumers_use_the_inherited_alpine_repositories(self):
+        for name in ('minio', 'rabbitmq'):
+            with self.subTest(name=name):
+                dockerfile = (ROOT / name / 'Dockerfile').read_text()
+                self.assertNotIn('/v3.21/community', dockerfile)
+                self.assertNotIn('>> /etc/apk/repositories', dockerfile)
+                self.assertIn('apk add --no-cache', dockerfile)
+
     def test_spliced_upgrade_without_separator_is_detected(self):
         for command in ('apk', 'apt-get', 'apt'):
             with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:

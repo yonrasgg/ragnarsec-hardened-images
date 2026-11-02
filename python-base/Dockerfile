@@ -7,7 +7,7 @@ ARG VCS_REF=local
 ARG VERSION=dev
 
 LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-hardened-images" \
-      org.opencontainers.image.description="RagnarSec Python Base (Alpine 3.21 + Python 3)" \
+      org.opencontainers.image.description="RagnarSec Python base runtime" \
       org.opencontainers.image.licenses="GPL-3.0" \
       org.opencontainers.image.url="https://github.com/yonrasgg/ragnarsec-hardened-images/tree/main/python-base" \
       org.opencontainers.image.version="${VERSION}" \
