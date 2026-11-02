@@ -1,11 +1,11 @@
-FROM alpine:3.21@sha256:ee16d92f96db08d9d2d07da48555a27f3a69d8f0759021dbc601195ed0d2b5bd
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 ARG BUILD_DATE=1970-01-01T00:00:00Z
 ARG VCS_REF=unknown
 ARG VERSION=dev
 
 LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-hardened-images" \
-      org.opencontainers.image.description="RagnarSec Base Image (Alpine 3.21)" \
+      org.opencontainers.image.description="RagnarSec Base Image (Alpine 3.24.3)" \
       org.opencontainers.image.licenses="GPL-3.0" \
       org.opencontainers.image.url="https://github.com/yonrasgg/ragnarsec-hardened-images/tree/main/base" \
       org.opencontainers.image.version="${VERSION}" \

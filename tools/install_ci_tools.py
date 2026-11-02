@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Install only checksum-pinned public CI tools into a new temporary directory."""
+"""Install checksum-pinned AMD64 CI tools into a new temporary directory."""
 import argparse
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import tarfile
 import urllib.request
@@ -25,6 +26,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
     args = parser.parse_args()
+    host = os.uname().machine
+    if host != 'x86_64':
+        raise ValueError('unsupported-ci-host-arch:' + host)
     args.directory.mkdir(mode=0o700, exist_ok=False)
     pins = json.loads(Path(__file__).with_name('ci-tools.json').read_text())
     for name, pin in pins.items():
