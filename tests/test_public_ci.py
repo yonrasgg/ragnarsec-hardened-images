@@ -254,6 +254,19 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_continued_upgrade_command_cannot_bypass_policy(self):
+        for command in ('apk', 'apt-get', 'apt'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN ' + command + ' \\\n upgrade\nUSER 1000\n')
+                self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
+    def test_heredoc_upgrade_command_remains_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\napk upgrade\nEOF\nUSER 1000\n')
+            self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
     def test_heredoc_text_is_not_an_add_or_from_instruction(self):
         for body in ('add table inet filter', 'from alpine:latest'):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
