@@ -120,9 +120,15 @@ class ImagePlanning(unittest.TestCase):
             self.assertIn('--provenance=false', builds[0])
             self.assertIn('--sbom=false', builds[0])
             scans = [call.args for call in cmd.call_args_list
-                     if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
+                      if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
             self.assertEqual(len(scans), 1)
             self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
+            structure_tests = [call.args for call in cmd.call_args_list
+                               if call.args[:2] == ('container-structure-test', 'test')]
+            self.assertEqual(len(structure_tests), 1)
+            self.assertEqual(
+                structure_tests[0][structure_tests[0].index('--platform') + 1],
+                'linux/amd64')
             self.assertTrue((output / 'validated.json').is_file())
 
     def test_base_min_sbom_requires_only_shipped_apk_packages(self):
@@ -502,14 +508,14 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('HEAD^2',provenance)
     def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
-        self.assertIn('sync/development-to-staging-main-gate-20261102',provenance)
-        self.assertIn('99cc8d99222cc046968913c8d4dfb37df339e26f',provenance)
-        self.assertNotIn('sync/development-to-staging-20261102',provenance)
-        self.assertNotIn('bff48d8540571196ec1227d923a0d8d0fc943271',provenance)
-        self.assertIn('sync/staging-to-main-20261102',provenance)
-        self.assertIn('4d544f9c29fd469fc4ef8c97221237ae5a76ffc4',provenance)
-        self.assertNotIn('sync/staging-to-main-20261101',provenance)
-        self.assertNotIn('ec651145b1e4571e946fe84bcaf1ef38aabdc172',provenance)
+        self.assertIn('sync/development-to-staging-arm64-fix-20261102',provenance)
+        self.assertIn('8d4808939736ea5a2e6d3000258c471ba1a6ccf5',provenance)
+        self.assertNotIn('sync/development-to-staging-main-gate-20261102',provenance)
+        self.assertNotIn('99cc8d99222cc046968913c8d4dfb37df339e26f',provenance)
+        self.assertIn('sync/staging-to-main-arm64-fix-20261102',provenance)
+        self.assertIn('d2072d431c2ebc64ba346da7eadb98b5b0f18cbd',provenance)
+        self.assertNotIn('sync/staging-to-main-20261102',provenance)
+        self.assertNotIn('4d544f9c29fd469fc4ef8c97221237ae5a76ffc4',provenance)
         self.assertIn('git merge-base --is-ancestor "origin/$base" "$commit"',provenance)
         self.assertIn('origin/${source_branch}^{tree}',provenance)
         self.assertIn('require_one_time_sync "$head" staging',provenance)
