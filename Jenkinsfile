@@ -13,7 +13,8 @@
 //
 // Job requirements (owned by Jenkins, not by this repository):
 // - multibranch pipeline with a non-shallow checkout;
-// - an agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
+// - an x86_64 agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
+//   ARM64 targets require qemu-aarch64 binfmt on this AMD64 CI host;
 // - a selected buildx builder using the `docker` driver so validated local
 //   parent tags are visible to dependent builds before publication;
 // - credentials id `ragnarsec-registry` (username/password) for publication;
@@ -200,6 +201,10 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
+          test "$(uname -m)" = "x86_64" || {
+            echo 'STOP: pinned CI tools require an x86_64 host; ARM64 targets need QEMU.' >&2
+            exit 2
+          }
           : "${CI_ROOT:?}"
           # Jenkins may reuse the workspace; the installer requires a new
           # directory and validation receipts must never survive a build.
