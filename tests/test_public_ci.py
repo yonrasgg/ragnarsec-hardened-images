@@ -264,6 +264,11 @@ class DockerfilePolicy(unittest.TestCase):
         for name, version in versions['ragnarsec-base']['packages'].items():
             self.assertIn(name + '=' + version, base)
 
+    def test_base_consumers_do_not_advertise_obsolete_alpine_release(self):
+        for name in ('nginx', 'python-base'):
+            with self.subTest(name=name):
+                self.assertNotIn('Alpine 3.21', (ROOT / name / 'Dockerfile').read_text())
+
     def test_heredoc_text_is_not_an_add_or_from_instruction(self):
         for body in ('add table inet filter', 'from alpine:latest'):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
