@@ -313,6 +313,14 @@ class DockerfilePolicy(unittest.TestCase):
                 dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\n' + body + '\nEOF\nUSER 1000\n')
                 self.assertEqual(policy.check_dockerfile(dockerfile), [])
 
+    def test_quoted_actual_heredoc_delimiter_still_hides_its_body(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text(
+                "FROM alpine:3.24\nRUN <<'EOF'\nADD payload /payload\n"
+                'FROM alpine:latest\nEOF\nUSER 1000\n')
+            self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
     def test_real_instructions_after_heredoc_still_trigger(self):
         with tempfile.TemporaryDirectory() as tmp:
             dockerfile = Path(tmp) / 'Dockerfile'
@@ -320,6 +328,22 @@ class DockerfilePolicy(unittest.TestCase):
                                   'aDd payload /payload\nfRoM alpine:latest\nUSER 1000\n')
             self.assertIn('add-instead-of-copy', policy.check_dockerfile(dockerfile))
             self.assertIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+
+    def test_quoted_heredoc_text_cannot_hide_later_instructions(self):
+        for quoted_text in (
+                'RUN echo "<<EOF"',
+                'RUN ["echo", "<<EOF"]',
+                'RUN echo "$(echo "<<EOF")"',
+                'SHELL ["/bin/bash", "-c"]\nRUN cat <<<EOF'):
+            with self.subTest(quoted_text=quoted_text), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text(
+                    'FROM alpine:3.24\n' + quoted_text + '\n'
+                    'ADD payload /payload\nFROM alpine:latest\n'
+                    'RUN <<EOF\nreal heredoc body\nEOF\nUSER 1000\n')
+                problems = policy.check_dockerfile(dockerfile)
+                self.assertIn('add-instead-of-copy', problems)
+                self.assertIn('latest-tag-in-from', problems)
 
     def test_mixed_case_dockerfile_opcodes_cannot_bypass_policy(self):
         for dockerfile_text, violation in (
