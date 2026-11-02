@@ -23,6 +23,8 @@ import image_policy as policy  # noqa: E402
 DEFAULT_PLATFORMS = ('linux/amd64', 'linux/arm64')
 ALLOWED_PLATFORMS = {'linux/amd64': 'amd64', 'linux/arm64': 'arm64'}
 QEMU_HANDLERS = {'amd64': 'qemu-x86_64', 'arm64': 'qemu-aarch64'}
+BASE_MIN_APK_PACKAGES = {'alpine-baselayout-data', 'alpine-release',
+                         'ca-certificates-bundle', 'musl', 'tini'}
 
 
 def platforms():
@@ -101,7 +103,18 @@ def _build_args(image, tag, platform):
     return ('--build-arg', 'BASE_TAG=' + tag,
             '--build-arg', 'BUILD_DATE=' + os.environ.get('BUILD_DATE', '1970-01-01T00:00:00Z'),
             '--build-arg', 'VCS_REF=' + (os.environ.get('GIT_COMMIT') or os.environ.get('GITHUB_SHA') or 'local'),
-            '-f', image['dockerfile'], image['context'])
+             '-f', image['dockerfile'], image['context'])
+
+
+def require_base_min_inventory(sbom):
+    """A green scan is meaningless if the runtime's APK packages are invisible."""
+    components = json.loads(sbom.read_text()).get('components') or []
+    apk = [c for c in components if (c.get('purl') or '').startswith('pkg:apk/alpine/')]
+    names = [c.get('name') for c in apk]
+    if (set(names) != BASE_MIN_APK_PACKAGES or len(names) != len(BASE_MIN_APK_PACKAGES)
+            or any(not c.get('version') for c in apk)
+            or not any(c.get('name') == 'alpine' for c in components)):
+        raise ValueError('base-min-sbom-package-inventory-mismatch')
 
 
 def validate(selected, tag, output):
@@ -146,10 +159,13 @@ def validate(selected, tag, output):
                 raise ValueError(over[0])
             command('container-structure-test', 'test', '--image', ref, '--config', str(test))
             command('trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
-                    '--exit-code', '1', '--image-config-scanners', 'misconfig,secret', '--ignorefile', '/dev/null', ref)
+                    '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
+                    'misconfig,secret', '--ignorefile', '/dev/null', ref)
             command('trivy', 'image', '--scanners', 'license', '--format', 'table', '--exit-code', '0', ref)
             sbom = output / (name + '.' + suffix + '.cdx.json')
             command('trivy', 'image', '--format', 'cyclonedx', '--output', str(sbom), ref)
+            if name == 'ragnarsec-base-min':
+                require_base_min_inventory(sbom)
             receipts.append({'ref': ref, 'name': name, 'platform': platform, 'id': image_id,
                              'sbom': sbom.name,
                              'sbom_sha256': hashlib.sha256(sbom.read_bytes()).hexdigest()})
