@@ -52,7 +52,9 @@ def _logical_instructions(text):
                 line = next(lines, None)
                 if line is None:
                     raise ValueError('incomplete-dockerfile-continuation')
-        instruction = ' '.join(parts).strip()
+        # Docker removes the escape and newline without inserting a separator;
+        # the leading whitespace of a continued line is preserved verbatim.
+        instruction = ''.join(parts).strip()
         yield instruction
         for tabs, _, delimiter in HEREDOC.findall(instruction):
             for line in lines:
