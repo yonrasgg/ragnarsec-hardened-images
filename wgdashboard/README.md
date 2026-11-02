@@ -63,6 +63,7 @@ passing build.
   ```sh
   mkdir -p /etc/wireguard/WGDashboard_Backup /var/lib/wgdashboard/backup
   docker run -d \
+    --security-opt no-new-privileges=true \
     -v /etc/wireguard:/etc/wireguard:ro \
     -v /var/lib/wgdashboard/backup:/etc/wireguard/WGDashboard_Backup:rw \
     -v /var/lib/wgdashboard/data:/data \

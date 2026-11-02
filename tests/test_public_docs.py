@@ -12,6 +12,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('/etc/wireguard/WGDashboard_Backup', readme)
         self.assertIn(':rw', readme)
         self.assertIn('pre-create', readme.lower())
+        self.assertIn('no-new-privileges=true', readme)
         self.assertIn('read-only file system', readme.lower())
         self.assertIn('WGDashboard_Backup', dockerfile)
 
