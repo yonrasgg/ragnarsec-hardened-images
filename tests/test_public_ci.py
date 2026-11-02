@@ -254,6 +254,19 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_spliced_upgrade_without_separator_is_detected(self):
+        for command in ('apk', 'apt-get', 'apt'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN ' + command + ' up\\\ngrade\nUSER 1000\n')
+                self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
+    def test_spliced_word_is_not_reported_as_upgrade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN echo apk\\\nupgrade\nUSER 1000\n')
+            self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
     def test_continued_upgrade_command_cannot_bypass_policy(self):
         for command in ('apk', 'apt-get', 'apt'):
             with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
