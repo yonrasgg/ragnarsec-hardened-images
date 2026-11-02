@@ -130,9 +130,14 @@ def validate(selected, tag, output):
             ref = REGISTRY + name + ':' + tag + '-' + suffix
             # buildx --load supports one platform per invocation; this keeps the
             # structure test and the scanner honest about the exact bytes.
+            # Disable Buildx attestations: with a containerd store, even a single
+            # platform otherwise pushes an index (runtime + provenance) rather
+            # than the manifest that the publish/signing checks expect. Trivy
+            # generates the SBOM; Cosign signs and attests the validated result.
             # Parents are tagged with the platform suffix, so BASE_TAG must match
             # that suffix or dependent recipes would look for a tag never built.
-            command('docker', 'buildx', 'build', '--platform', platform, '--load',
+            command('docker', 'buildx', 'build', '--platform', platform,
+                    '--provenance=false', '--sbom=false', '--load',
                     '-t', ref, *_build_args(image, tag + '-' + suffix, platform))
             image_id = command('docker', 'image', 'inspect', '--format={{.Id}}', ref, capture=True).stdout.strip()
             size = int(command('docker', 'image', 'inspect', '--format={{.Size}}', ref, capture=True).stdout.strip())

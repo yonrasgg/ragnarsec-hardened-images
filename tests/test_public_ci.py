@@ -94,6 +94,30 @@ class ImagePlanning(unittest.TestCase):
             ci.require_local_parent_builder()
             cmd.assert_called_once_with('docker', 'buildx', 'inspect', capture=True)
 
+    def test_validation_builds_single_platform_manifests_without_buildx_attestations(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
+             patch.object(ci, 'require_platforms_available'), \
+             patch.object(ci, 'require_local_parent_builder'):
+            output = Path(tmp) / 'validated'
+
+            def fake(*args, capture=False):
+                if args[:3] == ('docker', 'image', 'inspect'):
+                    value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
+                    return subprocess.CompletedProcess([], 0, stdout=value)
+                if args[:2] == ('trivy', 'image') and '--output' in args:
+                    Path(args[args.index('--output') + 1]).write_text('{}')
+                return subprocess.CompletedProcess([], 0, stdout='')
+
+            with patch.object(ci, 'command', side_effect=fake) as cmd:
+                ci.validate('ragnarsec-base', 'test', output)
+            builds = [call.args for call in cmd.call_args_list
+                      if call.args[:3] == ('docker', 'buildx', 'build')]
+            self.assertEqual(len(builds), 1)
+            self.assertIn('--provenance=false', builds[0])
+            self.assertIn('--sbom=false', builds[0])
+            self.assertTrue((output / 'validated.json').is_file())
+
     def test_failed_validation_never_writes_success_receipt(self):
         env = {'PLATFORMS': 'linux/amd64'}
         with tempfile.TemporaryDirectory() as tmp, patch.dict(ci.os.environ, env),                 patch.object(ci, 'command', side_effect=subprocess.CalledProcessError(1, 'hadolint')):
