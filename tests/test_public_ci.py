@@ -293,6 +293,16 @@ class DockerfilePolicy(unittest.TestCase):
                 dockerfile.write_text(dockerfile_text)
                 self.assertIn(violation, policy.check_dockerfile(dockerfile))
 
+    def test_platform_qualified_from_latest_is_rejected_not_heredoc_text(self):
+        for instruction in ('FROM --platform=$TARGETPLATFORM alpine:latest',
+                            'fRoM --platform=linux/amd64 alpine:latest AS build'):
+            with self.subTest(instruction=instruction), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text(instruction + '\nUSER 1000\n')
+                self.assertIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+                dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\n' + instruction + '\nEOF\nUSER 1000\n')
+                self.assertNotIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+
     def test_root_user_with_group_requires_exception(self):
         for user in ('0:0', 'root:root', '0:1000', 'root:1000'):
             with self.subTest(user=user), tempfile.TemporaryDirectory() as tmp:
