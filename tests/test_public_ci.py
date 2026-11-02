@@ -20,15 +20,18 @@ policy = load('image_policy')
 
 class ImagePlanning(unittest.TestCase):
     def test_foreign_platform_uses_qemu_registration_name(self):
-        for native, foreign, handler in (
-            ('x86_64', 'linux/arm64', 'qemu-aarch64'),
-            ('aarch64', 'linux/amd64', 'qemu-x86_64'),
-        ):
-            with self.subTest(native=native, foreign=foreign):
-                with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': native})()), \
-                     patch.object(ci.Path, 'exists', autospec=True,
-                                  side_effect=lambda path: path.name == handler):
-                    ci.require_platforms_available([foreign])
+        with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
+             patch.object(ci.Path, 'exists', autospec=True,
+                          side_effect=lambda path: path.name == 'qemu-aarch64'):
+            ci.require_platforms_available(['linux/arm64'])
+
+    def test_arm64_ci_host_is_rejected_even_for_native_target(self):
+        for host in ('aarch64', 'arm64'):
+            with self.subTest(host=host), \
+                 patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': host})()), \
+                 patch.object(ci.Path, 'exists', side_effect=AssertionError('binfmt checked')):
+                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:' + host):
+                    ci.require_platforms_available(['linux/arm64'])
 
     def test_foreign_platform_without_handler_fails(self):
         with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
@@ -354,6 +357,16 @@ class DockerfilePolicy(unittest.TestCase):
             self.assertNotIn('root-final-user', policy.check_dockerfile(dockerfile))
 
 class ToolCustody(unittest.TestCase):
+    def test_installer_rejects_arm64_before_directory_or_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / 'tools'
+            with patch('sys.argv', ['install_ci_tools.py', str(destination)]), \
+                 patch('os.uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+                 patch.object(install.urllib.request, 'urlopen', side_effect=AssertionError('download attempted')):
+                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:aarch64'):
+                    install.main()
+            self.assertFalse(destination.exists())
+
     def test_checksum_mismatch_rejects_executable(self):
         with self.assertRaisesRegex(ValueError,'checksum'):install.payload(b'modified',{'sha256':'0'*64})
     def test_archive_member_is_read_without_extracting_paths(self):
@@ -429,5 +442,11 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertLess(tools.index('rm -rf "$CI_ROOT"'),tools.index('install_ci_tools.py'))
         post=self.pipeline.split('post {',1)[1]
         self.assertIn('rm -rf "$CI_ROOT"',post)
+
+    def test_jenkins_rejects_non_amd64_host_before_tool_installation(self):
+        tools = self.pipeline.split("stage('Tools')", 1)[1].split("stage('Secret scan')", 1)[0]
+        self.assertIn('test "$(uname -m)" = "x86_64"', tools)
+        self.assertLess(tools.index('test "$(uname -m)" = "x86_64"'),
+                        tools.index('install_ci_tools.py'))
 
 if __name__=='__main__':unittest.main()
