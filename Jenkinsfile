@@ -145,9 +145,9 @@ pipeline {
               staging)
                 if [ "$source" = "development" ]; then
                   require_traceable development "$head" 'staging pull request is not traceable to development.'
-                elif [ "$source" = "sync/development-to-staging-20261102" ]; then
+                elif [ "$source" = "sync/development-to-staging-main-gate-20261102" ]; then
                   require_one_time_sync "$head" staging \
-                    bff48d8540571196ec1227d923a0d8d0fc943271 development
+                    99cc8d99222cc046968913c8d4dfb37df339e26f development
                 else
                   echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                   exit 2
@@ -156,9 +156,9 @@ pipeline {
               main)
                 if [ "$source" = "staging" ]; then
                   require_traceable staging "$head" 'main pull request is not traceable to staging.'
-                elif [ "$source" = "sync/staging-to-main-20261101" ]; then
+                elif [ "$source" = "sync/staging-to-main-20261102" ]; then
                   require_one_time_sync "$head" main \
-                    ec651145b1e4571e946fe84bcaf1ef38aabdc172 staging
+                    4d544f9c29fd469fc4ef8c97221237ae5a76ffc4 staging
                 else
                   echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                   exit 2
