@@ -92,15 +92,16 @@ def check_dockerfile(path):
     """Return a list of policy violations for one Dockerfile.
 
     Comments are ignored so that a documented exception does not trip the checks.
-    Continuation lines are covered: upgrades are searched in the whole body, not
-    only at the start of a RUN line.
+    Search both raw heredoc bodies and normalized instructions so a continued
+    RUN command cannot hide an upgrade.
     """
     text = Path(path).read_text()
     body = _strip_comments(text)
     instructions = list(_logical_instructions(text))
     allowed = _exceptions(text)
     problems = []
-    if UPGRADE.search(body) and 'upgrade' not in allowed:
+    has_upgrade = UPGRADE.search(body) or any(UPGRADE.search(i) for i in instructions)
+    if has_upgrade and 'upgrade' not in allowed:
         problems.append('forbidden-upgrade-instruction')
     if any(ADD_INSTRUCTION.match(instruction) for instruction in instructions):
         problems.append('add-instead-of-copy')
