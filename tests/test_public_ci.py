@@ -120,9 +120,15 @@ class ImagePlanning(unittest.TestCase):
             self.assertIn('--provenance=false', builds[0])
             self.assertIn('--sbom=false', builds[0])
             scans = [call.args for call in cmd.call_args_list
-                     if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
+                      if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
             self.assertEqual(len(scans), 1)
             self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
+            structure_tests = [call.args for call in cmd.call_args_list
+                               if call.args[:2] == ('container-structure-test', 'test')]
+            self.assertEqual(len(structure_tests), 1)
+            self.assertEqual(
+                structure_tests[0][structure_tests[0].index('--platform') + 1],
+                'linux/amd64')
             self.assertTrue((output / 'validated.json').is_file())
 
     def test_base_min_sbom_requires_only_shipped_apk_packages(self):
