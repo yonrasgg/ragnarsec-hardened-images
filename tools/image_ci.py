@@ -156,7 +156,8 @@ def validate(selected, tag, output):
             over = policy.check_budget(name, size, ROOT / 'budgets.json')
             if over:
                 raise ValueError(over[0])
-            command('container-structure-test', 'test', '--image', ref, '--config', str(test))
+            command('container-structure-test', 'test', '--platform', platform,
+                    '--image', ref, '--config', str(test))
             command('trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
                     'misconfig,secret', '--ignorefile', '/dev/null', ref)
