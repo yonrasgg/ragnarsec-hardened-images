@@ -97,13 +97,14 @@ def check_dockerfile(path):
     """
     text = Path(path).read_text()
     body = _strip_comments(text)
+    instructions = list(_logical_instructions(text))
     allowed = _exceptions(text)
     problems = []
     if UPGRADE.search(body) and 'upgrade' not in allowed:
         problems.append('forbidden-upgrade-instruction')
-    if ADD_INSTRUCTION.search(body):
+    if any(ADD_INSTRUCTION.match(instruction) for instruction in instructions):
         problems.append('add-instead-of-copy')
-    if LATEST_TAG.search(body):
+    if any(LATEST_TAG.match(instruction) for instruction in instructions):
         problems.append('latest-tag-in-from')
     final_user = _final_stage_user(text)
     if final_user is None and 'root' not in allowed:
