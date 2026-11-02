@@ -254,6 +254,16 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_shared_base_uses_supported_alpine_pin_and_matching_manifest(self):
+        base = (ROOT / 'base' / 'Dockerfile').read_text()
+        versions = json.loads((ROOT / 'versions.json').read_text())
+        digest = 'sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a'
+        self.assertIn('FROM alpine:3.24.3@' + digest, base)
+        self.assertEqual(versions['ragnarsec-base']['alpine_digest'], digest)
+        self.assertEqual(versions['ragnarsec-base-min']['alpine_digest'], digest)
+        for name, version in versions['ragnarsec-base']['packages'].items():
+            self.assertIn(name + '=' + version, base)
+
     def test_heredoc_text_is_not_an_add_or_from_instruction(self):
         for body in ('add table inet filter', 'from alpine:latest'):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
