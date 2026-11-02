@@ -6,6 +6,25 @@ ROOT = Path(__file__).parents[1]
 HEADINGS = ('Purpose', 'Build inputs', 'Hardening declared', 'Patching', 'Controls and evidence', 'Using the image', 'License')
 
 class DocumentationContractTests(unittest.TestCase):
+    def test_wgdashboard_documents_writable_backup_under_read_only_config(self):
+        readme = (ROOT / 'wgdashboard' / 'README.md').read_text()
+        dockerfile = (ROOT / 'wgdashboard' / 'Dockerfile').read_text()
+        self.assertIn('/etc/wireguard/WGDashboard_Backup', readme)
+        self.assertIn(':rw', readme)
+        self.assertIn('pre-create', readme.lower())
+        self.assertIn('no-new-privileges=true', readme)
+        self.assertIn('read-only file system', readme.lower())
+        self.assertIn('WGDashboard_Backup', dockerfile)
+
+    def test_security_policy_has_private_reporting_route_not_template_placeholders(self):
+        policy = (ROOT / 'SECURITY.md').read_text()
+        self.assertIn('https://github.com/yonrasgg/ragnarsec-hardened-images/security/advisories/new', policy)
+        self.assertIn('privately', policy)
+        self.assertIn('acknowledg', policy.lower())
+        self.assertIn('declined', policy.lower())
+        self.assertNotIn('Use this section to tell people', policy)
+        self.assertNotIn('5.1.x', policy)
+
     def test_every_service_readme_has_a_reusable_contract(self):
         paths = list(ROOT.glob('*/README.md'))
         self.assertGreater(len(paths), 15)

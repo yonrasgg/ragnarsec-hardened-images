@@ -20,15 +20,18 @@ policy = load('image_policy')
 
 class ImagePlanning(unittest.TestCase):
     def test_foreign_platform_uses_qemu_registration_name(self):
-        for native, foreign, handler in (
-            ('x86_64', 'linux/arm64', 'qemu-aarch64'),
-            ('aarch64', 'linux/amd64', 'qemu-x86_64'),
-        ):
-            with self.subTest(native=native, foreign=foreign):
-                with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': native})()), \
-                     patch.object(ci.Path, 'exists', autospec=True,
-                                  side_effect=lambda path: path.name == handler):
-                    ci.require_platforms_available([foreign])
+        with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
+             patch.object(ci.Path, 'exists', autospec=True,
+                          side_effect=lambda path: path.name == 'qemu-aarch64'):
+            ci.require_platforms_available(['linux/arm64'])
+
+    def test_arm64_ci_host_is_rejected_even_for_native_target(self):
+        for host in ('aarch64', 'arm64'):
+            with self.subTest(host=host), \
+                 patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': host})()), \
+                 patch.object(ci.Path, 'exists', side_effect=AssertionError('binfmt checked')):
+                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:' + host):
+                    ci.require_platforms_available(['linux/arm64'])
 
     def test_foreign_platform_without_handler_fails(self):
         with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
@@ -93,6 +96,57 @@ class ImagePlanning(unittest.TestCase):
                 [], 0, stdout='Name: default\nDriver: docker\n')) as cmd:
             ci.require_local_parent_builder()
             cmd.assert_called_once_with('docker', 'buildx', 'inspect', capture=True)
+
+    def test_validation_builds_single_platform_manifests_without_buildx_attestations(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
+             patch.object(ci, 'require_platforms_available'), \
+             patch.object(ci, 'require_local_parent_builder'):
+            output = Path(tmp) / 'validated'
+
+            def fake(*args, capture=False):
+                if args[:3] == ('docker', 'image', 'inspect'):
+                    value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
+                    return subprocess.CompletedProcess([], 0, stdout=value)
+                if args[:2] == ('trivy', 'image') and '--output' in args:
+                    Path(args[args.index('--output') + 1]).write_text('{}')
+                return subprocess.CompletedProcess([], 0, stdout='')
+
+            with patch.object(ci, 'command', side_effect=fake) as cmd:
+                ci.validate('ragnarsec-base', 'test', output)
+            builds = [call.args for call in cmd.call_args_list
+                      if call.args[:3] == ('docker', 'buildx', 'build')]
+            self.assertEqual(len(builds), 1)
+            self.assertIn('--provenance=false', builds[0])
+            self.assertIn('--sbom=false', builds[0])
+            scans = [call.args for call in cmd.call_args_list
+                     if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
+            self.assertEqual(len(scans), 1)
+            self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
+            self.assertTrue((output / 'validated.json').is_file())
+
+    def test_base_min_sbom_requires_only_shipped_apk_packages(self):
+        expected = ci.BASE_MIN_APK_PACKAGES
+        components = [{'name': 'alpine', 'version': '3.21.9'}] + [
+            {'name': name, 'version': '1-r0',
+             'purl': 'pkg:apk/alpine/' + name + '@1-r0?arch=x86_64&distro=3.21.9'}
+            for name in sorted(expected)]
+        with tempfile.TemporaryDirectory() as tmp:
+            sbom = Path(tmp) / 'base-min.cdx.json'
+            for records, rejected in (
+                (components, False),
+                ([c for c in components if c['name'] != 'musl'], True),
+                (components + [{'name': 'apk-tools', 'version': '1-r0',
+                                'purl': 'pkg:apk/alpine/apk-tools@1-r0'}], True),
+                ([c for c in components if c['name'] != 'alpine'], True),
+            ):
+                with self.subTest(packages=[c['name'] for c in records]):
+                    sbom.write_text(json.dumps({'components': records}))
+                    if rejected:
+                        with self.assertRaisesRegex(ValueError, 'base-min-sbom-package-inventory-mismatch'):
+                            ci.require_base_min_inventory(sbom)
+                    else:
+                        ci.require_base_min_inventory(sbom)
 
     def test_failed_validation_never_writes_success_receipt(self):
         env = {'PLATFORMS': 'linux/amd64'}
@@ -203,6 +257,115 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_shared_base_uses_supported_alpine_pin_and_matching_manifest(self):
+        base = (ROOT / 'base' / 'Dockerfile').read_text()
+        versions = json.loads((ROOT / 'versions.json').read_text())
+        digest = 'sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a'
+        self.assertIn('FROM alpine:3.24.3@' + digest, base)
+        self.assertEqual(versions['ragnarsec-base']['alpine_digest'], digest)
+        self.assertEqual(versions['ragnarsec-base-min']['alpine_digest'], digest)
+        for name, version in versions['ragnarsec-base']['packages'].items():
+            self.assertIn(name + '=' + version, base)
+
+    def test_base_consumers_do_not_advertise_obsolete_alpine_release(self):
+        for name in ('nginx', 'python-base'):
+            with self.subTest(name=name):
+                self.assertNotIn('Alpine 3.21', (ROOT / name / 'Dockerfile').read_text())
+
+    def test_base_consumers_use_the_inherited_alpine_repositories(self):
+        for name in ('minio', 'rabbitmq'):
+            with self.subTest(name=name):
+                dockerfile = (ROOT / name / 'Dockerfile').read_text()
+                self.assertNotIn('/v3.21/community', dockerfile)
+                self.assertNotIn('>> /etc/apk/repositories', dockerfile)
+                self.assertIn('apk add --no-cache', dockerfile)
+
+    def test_spliced_upgrade_without_separator_is_detected(self):
+        for command in ('apk', 'apt-get', 'apt'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN ' + command + ' up\\\ngrade\nUSER 1000\n')
+                self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
+    def test_spliced_word_is_not_reported_as_upgrade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN echo apk\\\nupgrade\nUSER 1000\n')
+            self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
+    def test_continued_upgrade_command_cannot_bypass_policy(self):
+        for command in ('apk', 'apt-get', 'apt'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN ' + command + ' \\\n upgrade\nUSER 1000\n')
+                self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
+    def test_heredoc_upgrade_command_remains_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\napk upgrade\nEOF\nUSER 1000\n')
+            self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
+    def test_heredoc_text_is_not_an_add_or_from_instruction(self):
+        for body in ('add table inet filter', 'from alpine:latest'):
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\n' + body + '\nEOF\nUSER 1000\n')
+                self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
+    def test_quoted_actual_heredoc_delimiter_still_hides_its_body(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text(
+                "FROM alpine:3.24\nRUN <<'EOF'\nADD payload /payload\n"
+                'FROM alpine:latest\nEOF\nUSER 1000\n')
+            self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
+    def test_real_instructions_after_heredoc_still_trigger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\nadd table inet filter\nEOF\n'
+                                  'aDd payload /payload\nfRoM alpine:latest\nUSER 1000\n')
+            self.assertIn('add-instead-of-copy', policy.check_dockerfile(dockerfile))
+            self.assertIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+
+    def test_quoted_heredoc_text_cannot_hide_later_instructions(self):
+        for quoted_text in (
+                'RUN echo "<<EOF"',
+                'RUN ["echo", "<<EOF"]',
+                'RUN echo "$(echo "<<EOF")"',
+                'SHELL ["/bin/bash", "-c"]\nRUN cat <<<EOF'):
+            with self.subTest(quoted_text=quoted_text), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text(
+                    'FROM alpine:3.24\n' + quoted_text + '\n'
+                    'ADD payload /payload\nFROM alpine:latest\n'
+                    'RUN <<EOF\nreal heredoc body\nEOF\nUSER 1000\n')
+                problems = policy.check_dockerfile(dockerfile)
+                self.assertIn('add-instead-of-copy', problems)
+                self.assertIn('latest-tag-in-from', problems)
+
+    def test_mixed_case_dockerfile_opcodes_cannot_bypass_policy(self):
+        for dockerfile_text, violation in (
+            ('fRoM alpine:3.21\nUsEr 1000\nuSeR root\n', 'root-final-user'),
+            ('FROM alpine:3.21\naDd file /file\nUSER 1000\n', 'add-instead-of-copy'),
+            ('fRoM alpine:latest\nUSER 1000\n', 'latest-tag-in-from'),
+        ):
+            with self.subTest(violation=violation), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text(dockerfile_text)
+                self.assertIn(violation, policy.check_dockerfile(dockerfile))
+
+    def test_platform_qualified_from_latest_is_rejected_not_heredoc_text(self):
+        for instruction in ('FROM --platform=$TARGETPLATFORM alpine:latest',
+                            'fRoM --platform=linux/amd64 alpine:latest AS build'):
+            with self.subTest(instruction=instruction), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text(instruction + '\nUSER 1000\n')
+                self.assertIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+                dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\n' + instruction + '\nEOF\nUSER 1000\n')
+                self.assertNotIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+
     def test_root_user_with_group_requires_exception(self):
         for user in ('0:0', 'root:root', '0:1000', 'root:1000'):
             with self.subTest(user=user), tempfile.TemporaryDirectory() as tmp:
@@ -277,6 +440,16 @@ class DockerfilePolicy(unittest.TestCase):
             self.assertNotIn('root-final-user', policy.check_dockerfile(dockerfile))
 
 class ToolCustody(unittest.TestCase):
+    def test_installer_rejects_arm64_before_directory_or_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / 'tools'
+            with patch('sys.argv', ['install_ci_tools.py', str(destination)]), \
+                 patch('os.uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+                 patch.object(install.urllib.request, 'urlopen', side_effect=AssertionError('download attempted')):
+                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:aarch64'):
+                    install.main()
+            self.assertFalse(destination.exists())
+
     def test_checksum_mismatch_rejects_executable(self):
         with self.assertRaisesRegex(ValueError,'checksum'):install.payload(b'modified',{'sha256':'0'*64})
     def test_archive_member_is_read_without_extracting_paths(self):
@@ -329,10 +502,14 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('HEAD^2',provenance)
     def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
-        self.assertIn('sync/development-to-staging-zap-retirement-20261101',provenance)
-        self.assertIn('5db2589b44f996329168255958ecf3eb321eff1b',provenance)
-        self.assertIn('sync/staging-to-main-20261101',provenance)
-        self.assertIn('ec651145b1e4571e946fe84bcaf1ef38aabdc172',provenance)
+        self.assertIn('sync/development-to-staging-main-gate-20261102',provenance)
+        self.assertIn('99cc8d99222cc046968913c8d4dfb37df339e26f',provenance)
+        self.assertNotIn('sync/development-to-staging-20261102',provenance)
+        self.assertNotIn('bff48d8540571196ec1227d923a0d8d0fc943271',provenance)
+        self.assertIn('sync/staging-to-main-20261102',provenance)
+        self.assertIn('4d544f9c29fd469fc4ef8c97221237ae5a76ffc4',provenance)
+        self.assertNotIn('sync/staging-to-main-20261101',provenance)
+        self.assertNotIn('ec651145b1e4571e946fe84bcaf1ef38aabdc172',provenance)
         self.assertIn('git merge-base --is-ancestor "origin/$base" "$commit"',provenance)
         self.assertIn('origin/${source_branch}^{tree}',provenance)
         self.assertIn('require_one_time_sync "$head" staging',provenance)
@@ -352,5 +529,11 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertLess(tools.index('rm -rf "$CI_ROOT"'),tools.index('install_ci_tools.py'))
         post=self.pipeline.split('post {',1)[1]
         self.assertIn('rm -rf "$CI_ROOT"',post)
+
+    def test_jenkins_rejects_non_amd64_host_before_tool_installation(self):
+        tools = self.pipeline.split("stage('Tools')", 1)[1].split("stage('Secret scan')", 1)[0]
+        self.assertIn('test "$(uname -m)" = "x86_64"', tools)
+        self.assertLess(tools.index('test "$(uname -m)" = "x86_64"'),
+                        tools.index('install_ci_tools.py'))
 
 if __name__=='__main__':unittest.main()

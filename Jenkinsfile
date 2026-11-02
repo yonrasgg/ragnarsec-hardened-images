@@ -13,7 +13,8 @@
 //
 // Job requirements (owned by Jenkins, not by this repository):
 // - multibranch pipeline with a non-shallow checkout;
-// - an agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
+// - an x86_64 agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
+//   ARM64 targets require qemu-aarch64 binfmt on this AMD64 CI host;
 // - a selected buildx builder using the `docker` driver so validated local
 //   parent tags are visible to dependent builds before publication;
 // - credentials id `ragnarsec-registry` (username/password) for publication;
@@ -144,9 +145,9 @@ pipeline {
               staging)
                 if [ "$source" = "development" ]; then
                   require_traceable development "$head" 'staging pull request is not traceable to development.'
-                elif [ "$source" = "sync/development-to-staging-zap-retirement-20261101" ]; then
+                elif [ "$source" = "sync/development-to-staging-main-gate-20261102" ]; then
                   require_one_time_sync "$head" staging \
-                    5db2589b44f996329168255958ecf3eb321eff1b development
+                    99cc8d99222cc046968913c8d4dfb37df339e26f development
                 else
                   echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                   exit 2
@@ -155,9 +156,9 @@ pipeline {
               main)
                 if [ "$source" = "staging" ]; then
                   require_traceable staging "$head" 'main pull request is not traceable to staging.'
-                elif [ "$source" = "sync/staging-to-main-20261101" ]; then
+                elif [ "$source" = "sync/staging-to-main-20261102" ]; then
                   require_one_time_sync "$head" main \
-                    ec651145b1e4571e946fe84bcaf1ef38aabdc172 staging
+                    4d544f9c29fd469fc4ef8c97221237ae5a76ffc4 staging
                 else
                   echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                   exit 2
@@ -200,6 +201,10 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
+          test "$(uname -m)" = "x86_64" || {
+            echo 'STOP: pinned CI tools require an x86_64 host; ARM64 targets need QEMU.' >&2
+            exit 2
+          }
           : "${CI_ROOT:?}"
           # Jenkins may reuse the workspace; the installer requires a new
           # directory and validation receipts must never survive a build.

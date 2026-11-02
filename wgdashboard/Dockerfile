@@ -21,6 +21,9 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 # No apk upgrade here: this is an upstream Alpine image and the patch path is a new
 # upstream digest. The consumer must mount /etc/wireguard read-only and must not
 # grant NET_ADMIN; live handshake data is therefore out of scope by design.
+# Upstream unconditionally creates and writes /etc/wireguard/WGDashboard_Backup,
+# so that path must be pre-created on the host and mounted writable separately;
+# a fully read-only configuration directory aborts startup.
 
 EXPOSE 10086
 

@@ -9,6 +9,18 @@ fileExistenceTests:
   - name: 'tini'
     path: '/sbin/tini'
     shouldExist: true
+  - name: 'Alpine release'
+    path: '/etc/alpine-release'
+    shouldExist: true
+  - name: 'Alpine OS metadata'
+    path: '/usr/lib/os-release'
+    shouldExist: true
+  - name: 'Runtime APK inventory'
+    path: '/lib/apk/db/installed'
+    shouldExist: true
+  - name: 'No package manager'
+    path: '/sbin/apk'
+    shouldExist: false
   - name: 'No shell'
     path: '/bin/sh'
     shouldExist: false

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Bounded multi-arch image validation.
 
-Runner requirements: Linux with buildx, binfmt/qemu for foreign architectures,
-or a native runner per platform. No production hosts, deployment, global Docker
-cleanup or persistent caches.
+Runner requirements: Linux x86_64 with buildx and binfmt/qemu for ARM64 target
+images. The pinned CI tools are AMD64-only; native ARM64 hosts are not yet
+supported. No production hosts, deployment, global Docker cleanup or caches.
 """
 import argparse
 import hashlib
@@ -23,6 +23,8 @@ import image_policy as policy  # noqa: E402
 DEFAULT_PLATFORMS = ('linux/amd64', 'linux/arm64')
 ALLOWED_PLATFORMS = {'linux/amd64': 'amd64', 'linux/arm64': 'arm64'}
 QEMU_HANDLERS = {'amd64': 'qemu-x86_64', 'arm64': 'qemu-aarch64'}
+BASE_MIN_APK_PACKAGES = {'alpine-baselayout-data', 'alpine-release',
+                         'ca-certificates-bundle', 'musl', 'tini'}
 
 
 def platforms():
@@ -77,12 +79,11 @@ def command(*args, capture=False):
 
 def require_platforms_available(targets):
     host = os.uname().machine
-    native = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64', 'amd64': 'amd64'}.get(host)
-    if native is None:
-        raise ValueError('unsupported-host-arch:' + host)
+    if host != 'x86_64':
+        raise ValueError('unsupported-ci-host-arch:' + host)
     for platform in targets:
         arch = ALLOWED_PLATFORMS[platform]
-        if arch == native:
+        if arch == 'amd64':
             continue
         marker = Path('/proc/sys/fs/binfmt_misc') / QEMU_HANDLERS[arch]
         if not marker.exists():
@@ -101,7 +102,18 @@ def _build_args(image, tag, platform):
     return ('--build-arg', 'BASE_TAG=' + tag,
             '--build-arg', 'BUILD_DATE=' + os.environ.get('BUILD_DATE', '1970-01-01T00:00:00Z'),
             '--build-arg', 'VCS_REF=' + (os.environ.get('GIT_COMMIT') or os.environ.get('GITHUB_SHA') or 'local'),
-            '-f', image['dockerfile'], image['context'])
+             '-f', image['dockerfile'], image['context'])
+
+
+def require_base_min_inventory(sbom):
+    """A green scan is meaningless if the runtime's APK packages are invisible."""
+    components = json.loads(sbom.read_text()).get('components') or []
+    apk = [c for c in components if (c.get('purl') or '').startswith('pkg:apk/alpine/')]
+    names = [c.get('name') for c in apk]
+    if (set(names) != BASE_MIN_APK_PACKAGES or len(names) != len(BASE_MIN_APK_PACKAGES)
+            or any(not c.get('version') for c in apk)
+            or not any(c.get('name') == 'alpine' for c in components)):
+        raise ValueError('base-min-sbom-package-inventory-mismatch')
 
 
 def validate(selected, tag, output):
@@ -130,9 +142,14 @@ def validate(selected, tag, output):
             ref = REGISTRY + name + ':' + tag + '-' + suffix
             # buildx --load supports one platform per invocation; this keeps the
             # structure test and the scanner honest about the exact bytes.
+            # Disable Buildx attestations: with a containerd store, even a single
+            # platform otherwise pushes an index (runtime + provenance) rather
+            # than the manifest that the publish/signing checks expect. Trivy
+            # generates the SBOM; Cosign signs and attests the validated result.
             # Parents are tagged with the platform suffix, so BASE_TAG must match
             # that suffix or dependent recipes would look for a tag never built.
-            command('docker', 'buildx', 'build', '--platform', platform, '--load',
+            command('docker', 'buildx', 'build', '--platform', platform,
+                    '--provenance=false', '--sbom=false', '--load',
                     '-t', ref, *_build_args(image, tag + '-' + suffix, platform))
             image_id = command('docker', 'image', 'inspect', '--format={{.Id}}', ref, capture=True).stdout.strip()
             size = int(command('docker', 'image', 'inspect', '--format={{.Size}}', ref, capture=True).stdout.strip())
@@ -141,10 +158,13 @@ def validate(selected, tag, output):
                 raise ValueError(over[0])
             command('container-structure-test', 'test', '--image', ref, '--config', str(test))
             command('trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
-                    '--exit-code', '1', '--image-config-scanners', 'misconfig,secret', '--ignorefile', '/dev/null', ref)
+                    '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
+                    'misconfig,secret', '--ignorefile', '/dev/null', ref)
             command('trivy', 'image', '--scanners', 'license', '--format', 'table', '--exit-code', '0', ref)
             sbom = output / (name + '.' + suffix + '.cdx.json')
             command('trivy', 'image', '--format', 'cyclonedx', '--output', str(sbom), ref)
+            if name == 'ragnarsec-base-min':
+                require_base_min_inventory(sbom)
             receipts.append({'ref': ref, 'name': name, 'platform': platform, 'id': image_id,
                              'sbom': sbom.name,
                              'sbom_sha256': hashlib.sha256(sbom.read_bytes()).hexdigest()})
