@@ -13,7 +13,7 @@ USER_INSTRUCTION = re.compile(r'^\s*USER\s+(\S+)', re.M | re.I)
 FROM_INSTRUCTION = re.compile(r'^[ \t]*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?', re.I)
 EXCEPTION = re.compile(r'#\s*policy:\s*allow-(upgrade|root)\s+(\S.{0,120})')
 ESCAPE_DIRECTIVE = re.compile(r'^#\s*escape\s*=\s*([`\\])\s*$', re.I)
-HEREDOC = re.compile(r"<<(-?)(['\"]?)([A-Za-z_][A-Za-z0-9_.-]*)\2")
+HEREDOC_DELIMITER = re.compile(r'[A-Za-z_][A-Za-z0-9_.-]*')
 
 
 def _strip_comments(text):
@@ -22,6 +22,87 @@ def _strip_comments(text):
 
 def _exceptions(text):
     return {kind: reason.strip() for kind, reason in EXCEPTION.findall(text)}
+
+
+def _heredoc_markers(instruction):
+    """Return Docker heredoc markers, excluding operators inside string literals."""
+    markers = []
+    contexts = [{'kind': 'base', 'quote': None, 'depth': 0}]
+    i = 0
+    while i < len(instruction):
+        context = contexts[-1]
+        char = instruction[i]
+        if context['quote']:
+            if char == '\\' and context['quote'] == '"':
+                i += 2
+                continue
+            if context['quote'] == '"':
+                if instruction.startswith('$((', i):
+                    contexts.append({'kind': 'arithmetic', 'quote': None, 'depth': 2})
+                    i += 3
+                    continue
+                if instruction.startswith('$(', i):
+                    contexts.append({'kind': 'command', 'quote': None, 'depth': 1})
+                    i += 2
+                    continue
+                if char == '`':
+                    contexts.append({'kind': 'backtick', 'quote': None, 'depth': 0})
+                    i += 1
+                    continue
+            if char == context['quote']:
+                context['quote'] = None
+            i += 1
+            continue
+        if context['kind'] == 'backtick' and char == '`':
+            contexts.pop()
+            i += 1
+            continue
+        if instruction.startswith('$((', i):
+            contexts.append({'kind': 'arithmetic', 'quote': None, 'depth': 2})
+            i += 3
+            continue
+        if instruction.startswith('$(', i):
+            contexts.append({'kind': 'command', 'quote': None, 'depth': 1})
+            i += 2
+            continue
+        if char == '`':
+            contexts.append({'kind': 'backtick', 'quote': None, 'depth': 0})
+            i += 1
+            continue
+        if char in ('"', "'"):
+            context['quote'] = char
+            i += 1
+            continue
+        if char == '\\':
+            i += 2
+            continue
+        if context['kind'] in ('command', 'arithmetic') and char in '()':
+            context['depth'] += 1 if char == '(' else -1
+            if context['depth'] == 0:
+                contexts.pop()
+            i += 1
+            continue
+        if (context['kind'] != 'arithmetic' and
+                instruction.startswith('<<', i) and
+                not instruction.startswith('<<<', i) and
+                (i == 0 or instruction[i - 1] != '<')):
+            j = i + 2
+            tabs = False
+            if j < len(instruction) and instruction[j] == '-':
+                tabs = True
+                j += 1
+            delimiter_quote = instruction[j] if j < len(instruction) and instruction[j] in ('"', "'") else None
+            if delimiter_quote:
+                j += 1
+            delimiter = HEREDOC_DELIMITER.match(instruction, j)
+            if delimiter and (not delimiter_quote or
+                              delimiter.end() < len(instruction) and
+                              instruction[delimiter.end()] == delimiter_quote):
+                markers.append((tabs, delimiter.group(0)))
+                i = delimiter.end() + (1 if delimiter_quote else 0)
+                continue
+        i += 1
+    return markers
 
 
 def _logical_instructions(text):
@@ -56,7 +137,7 @@ def _logical_instructions(text):
         # the leading whitespace of a continued line is preserved verbatim.
         instruction = ''.join(parts).strip()
         yield instruction
-        for tabs, _, delimiter in HEREDOC.findall(instruction):
+        for tabs, delimiter in _heredoc_markers(instruction):
             for line in lines:
                 if (line.lstrip('\t') if tabs else line) == delimiter:
                     break
