@@ -254,6 +254,32 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_spliced_upgrade_without_separator_is_detected(self):
+        for command in ('apk', 'apt-get', 'apt'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN ' + command + ' up\\\ngrade\nUSER 1000\n')
+                self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
+    def test_spliced_word_is_not_reported_as_upgrade(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN echo apk\\\nupgrade\nUSER 1000\n')
+            self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
+    def test_continued_upgrade_command_cannot_bypass_policy(self):
+        for command in ('apk', 'apt-get', 'apt'):
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN ' + command + ' \\\n upgrade\nUSER 1000\n')
+                self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
+    def test_heredoc_upgrade_command_remains_detected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\napk upgrade\nEOF\nUSER 1000\n')
+            self.assertIn('forbidden-upgrade-instruction', policy.check_dockerfile(dockerfile))
+
     def test_heredoc_text_is_not_an_add_or_from_instruction(self):
         for body in ('add table inet filter', 'from alpine:latest'):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
@@ -279,6 +305,16 @@ class DockerfilePolicy(unittest.TestCase):
                 dockerfile = Path(tmp) / 'Dockerfile'
                 dockerfile.write_text(dockerfile_text)
                 self.assertIn(violation, policy.check_dockerfile(dockerfile))
+
+    def test_platform_qualified_from_latest_is_rejected_not_heredoc_text(self):
+        for instruction in ('FROM --platform=$TARGETPLATFORM alpine:latest',
+                            'fRoM --platform=linux/amd64 alpine:latest AS build'):
+            with self.subTest(instruction=instruction), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text(instruction + '\nUSER 1000\n')
+                self.assertIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+                dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\n' + instruction + '\nEOF\nUSER 1000\n')
+                self.assertNotIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
 
     def test_root_user_with_group_requires_exception(self):
         for user in ('0:0', 'root:root', '0:1000', 'root:1000'):
