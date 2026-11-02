@@ -55,8 +55,7 @@ pipeline {
         'ragnarsec-redis-exporter',
         'ragnarsec-trivy',
         'ragnarsec-valkey',
-        'ragnarsec-wgdashboard',
-        'ragnarsec-zap'
+        'ragnarsec-wgdashboard'
       ],
       description: 'One image; only its required build parents are included.'
     )
@@ -111,26 +110,28 @@ pipeline {
             echo "STOP: ${message}" >&2
             exit 2
           }
-          # One-time reconciliation for PR #25. This path expires when staging
-          # advances and requires the exact current development tree and a branch
-          # descended from the frozen staging tip. It does not publish anything.
+          # One-time recovery for the divergent staging/main histories. Each
+          # branch is exact-named, based on a frozen target tip, and must equal
+          # the current source tree. The exception expires when the target moves.
           require_one_time_sync() {
             commit="$1"
+            base="$2"
+            expected_tip="$3"
+            source_branch="$4"
             git fetch --no-tags origin \
-              "+refs/heads/development:refs/remotes/origin/development" \
-              "+refs/heads/staging:refs/remotes/origin/staging"
-            test "$(git rev-parse origin/staging)" = \
-              "1a851db5b14d3498d492ba5fb750995b716be080" || {
-                echo 'STOP: staging base changed; sync exception expired.' >&2
-                exit 2
-              }
-            git merge-base --is-ancestor origin/staging "$commit" || {
-              echo 'STOP: sync branch must descend from staging.' >&2
+              "+refs/heads/${base}:refs/remotes/origin/${base}" \
+              "+refs/heads/${source_branch}:refs/remotes/origin/${source_branch}"
+            test "$(git rev-parse "origin/${base}")" = "$expected_tip" || {
+              echo 'STOP: target base changed; sync exception expired.' >&2
+              exit 2
+            }
+            git merge-base --is-ancestor "origin/$base" "$commit" || {
+              echo 'STOP: sync branch must descend from target base.' >&2
               exit 2
             }
             test "$(git rev-parse "${commit}^{tree}")" = \
-              "$(git rev-parse 'origin/development^{tree}')" || {
-                echo 'STOP: sync tree differs from current development.' >&2
+              "$(git rev-parse "origin/${source_branch}^{tree}")" || {
+                echo 'STOP: sync tree differs from current source branch.' >&2
                 exit 2
               }
           }
@@ -143,19 +144,24 @@ pipeline {
               staging)
                 if [ "$source" = "development" ]; then
                   require_traceable development "$head" 'staging pull request is not traceable to development.'
-                elif [ "$source" = "sync/development-to-staging-20261101" ]; then
-                  require_one_time_sync "$head"
+                elif [ "$source" = "sync/development-to-staging-zap-retirement-20261101" ]; then
+                  require_one_time_sync "$head" staging \
+                    5db2589b44f996329168255958ecf3eb321eff1b development
                 else
                   echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                   exit 2
                 fi
                 ;;
               main)
-                test "$source" = "staging" || {
-                  echo 'STOP: main accepts pull requests only from staging.' >&2
+                if [ "$source" = "staging" ]; then
+                  require_traceable staging "$head" 'main pull request is not traceable to staging.'
+                elif [ "$source" = "sync/staging-to-main-20261101" ]; then
+                  require_one_time_sync "$head" main \
+                    ec651145b1e4571e946fe84bcaf1ef38aabdc172 staging
+                else
+                  echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                   exit 2
-                }
-                require_traceable staging "$head" 'main pull request is not traceable to staging.'
+                fi
                 ;;
             esac
           else

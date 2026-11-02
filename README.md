@@ -28,7 +28,6 @@ patching process, usage contract and the status of validation evidence.
 - [trivy](trivy/README.md): Container and filesystem security scanning tooling.
 - [valkey](valkey/README.md): Valkey key-value runtime.
 - [wgdashboard](wgdashboard/README.md): WireGuard web UI with a read-only deployment contract.
-- [zap](zap/README.md): Web application security testing tooling; targets require authorization.
 
 Plane component recipes are temporarily quarantined while their upstream build inputs
 are revalidated. They are not part of the catalog, CI choices or published images.
