@@ -254,6 +254,21 @@ class ImagePlanning(unittest.TestCase):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_heredoc_text_is_not_an_add_or_from_instruction(self):
+        for body in ('add table inet filter', 'from alpine:latest'):
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
+                dockerfile = Path(tmp) / 'Dockerfile'
+                dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\n' + body + '\nEOF\nUSER 1000\n')
+                self.assertEqual(policy.check_dockerfile(dockerfile), [])
+
+    def test_real_instructions_after_heredoc_still_trigger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dockerfile = Path(tmp) / 'Dockerfile'
+            dockerfile.write_text('FROM alpine:3.24\nRUN <<EOF\nadd table inet filter\nEOF\n'
+                                  'aDd payload /payload\nfRoM alpine:latest\nUSER 1000\n')
+            self.assertIn('add-instead-of-copy', policy.check_dockerfile(dockerfile))
+            self.assertIn('latest-tag-in-from', policy.check_dockerfile(dockerfile))
+
     def test_mixed_case_dockerfile_opcodes_cannot_bypass_policy(self):
         for dockerfile_text, violation in (
             ('fRoM alpine:3.21\nUsEr 1000\nuSeR root\n', 'root-final-user'),
