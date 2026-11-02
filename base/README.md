@@ -8,7 +8,11 @@ This document describes an image interface, not a deployed system.
 
 ## Build inputs
 
-- Declared `FROM`: `alpine:3.21`.
+- Declared `FROM`: `alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a`
+  (multi-platform index; validate each platform requested for publication).
+- Pinned packages: `ca-certificates=20261020-r0`, `tzdata=2026e-r0`,
+  `tini=0.19.0-r3`. These versions were checked in the Alpine 3.24 repository
+  for amd64; arm64 validation requires a suitable runner.
 
 Read the Dockerfile for exact build arguments, package choices and download locations.
 A tag is not immutable: resolve and review digests for a release. Availability and
@@ -16,8 +20,10 @@ support status of upstream versions must be checked before building.
 
 ## Hardening declared
 
-- Last `USER` instruction: `ragnarsec`; verify the effective image user after building.
-- The Dockerfile invokes `apk upgrade` during build.
+- Final image user: `1000:1000` (`ragnarsec`); verify the effective user after building.
+- No `apk upgrade`: changing the reviewed Alpine index digest and package pins
+  requires a new build and vulnerability scan. Alpine 3.21 is end-of-support;
+  `3.24.3` is the current reviewed build input, not proof of a published image.
 
 These are static observations, not proof of runtime isolation or vulnerability remediation.
 Consumers must validate required capabilities, filesystem permissions and writable data paths.
@@ -27,7 +33,7 @@ Consumers must validate required capabilities, filesystem permissions and writab
 Rebuild from reviewed upstream inputs to apply build-time package changes.
 An existing image is not patched merely because a new Dockerfile is committed.
 Record the upstream and output digests, scanner/database version, findings and any
-time-bounded exceptions. A successful package upgrade does not prove all CVEs are fixed.
+time-bounded exceptions. No clean-scan claim is implied by this digest update.
 
 ## Controls and evidence
 
@@ -36,7 +42,7 @@ time-bounded exceptions. A successful package upgrade does not prove all CVEs ar
 | Publication boundary and secret scanning | Repository guard, hooks and CI definitions; require a successful run for the release commit. |
 | Image test definitions | `../tests/ragnarsec-base.yaml`; execution not evidenced by this documentation. |
 
-Defined test cases: `Tini Version`, `User is non-root`, `User is non-root`, `CA Certificates`, `Tini`, `No sudo`.
+Defined test cases: `Tini Version`, `User is non-root`, `CA Certificates`, `Tini`, `No sudo`.
 
 No built-image pass, SBOM, signature, multi-architecture result or runtime smoke-test
 receipt is attached to this documentation update. Do not treat the catalog as an approval.

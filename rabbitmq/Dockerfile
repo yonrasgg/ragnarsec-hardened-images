@@ -17,10 +17,9 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 
 USER root
 
-# SECURITY: Upgrade system packages first + Install Community Repo
+# Use the Alpine repositories inherited from the pinned shared base.
 # hadolint ignore=DL3018
-RUN echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories && \
-    apk upgrade --no-cache && \
+RUN apk upgrade --no-cache && \
     apk add --no-cache rabbitmq-server && \
     # Verify user existence (created by package)
     getent passwd rabbitmq >/dev/null || ( echo "rabbitmq user missing" && exit 1 ) && \
