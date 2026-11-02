@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Bounded multi-arch image validation.
 
-Runner requirements: Linux with buildx, binfmt/qemu for foreign architectures,
-or a native runner per platform. No production hosts, deployment, global Docker
-cleanup or persistent caches.
+Runner requirements: Linux x86_64 with buildx and binfmt/qemu for ARM64 target
+images. The pinned CI tools are AMD64-only; native ARM64 hosts are not yet
+supported. No production hosts, deployment, global Docker cleanup or caches.
 """
 import argparse
 import hashlib
@@ -79,12 +79,11 @@ def command(*args, capture=False):
 
 def require_platforms_available(targets):
     host = os.uname().machine
-    native = {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64', 'amd64': 'amd64'}.get(host)
-    if native is None:
-        raise ValueError('unsupported-host-arch:' + host)
+    if host != 'x86_64':
+        raise ValueError('unsupported-ci-host-arch:' + host)
     for platform in targets:
         arch = ALLOWED_PLATFORMS[platform]
-        if arch == native:
+        if arch == 'amd64':
             continue
         marker = Path('/proc/sys/fs/binfmt_misc') / QEMU_HANDLERS[arch]
         if not marker.exists():

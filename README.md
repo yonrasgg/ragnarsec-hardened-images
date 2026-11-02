@@ -61,9 +61,11 @@ not every secret or every semantic security issue. A complete, pinned secret
 scan and actual image validation are separate release checks. A shallow clone
 cannot satisfy the history-path check.
 
-For full image validation, use the approved disposable Linux CI runner with
-Docker Buildx, the pinned tools in [`tools/ci-tools.json`](tools/ci-tools.json),
-and native or emulated support for each selected platform. Do not run these
+For full image validation, use an approved disposable **Linux x86_64 CI host**
+with Docker Buildx and the AMD64-only pinned tools in
+[`tools/ci-tools.json`](tools/ci-tools.json). ARM64 target images require
+`qemu-aarch64` binfmt on that host; a native ARM64 CI host is not supported
+until matching checksum-pinned tools and installation are added. Do not run these
 builds against a production Docker engine. See the exact commands and runner
 requirements in [`Jenkinsfile`](Jenkinsfile) and [`tools/image_ci.py`](tools/image_ci.py).
 
