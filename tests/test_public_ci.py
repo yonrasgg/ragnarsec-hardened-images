@@ -269,6 +269,14 @@ class DockerfilePolicy(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertNotIn('Alpine 3.21', (ROOT / name / 'Dockerfile').read_text())
 
+    def test_base_consumers_use_the_inherited_alpine_repositories(self):
+        for name in ('minio', 'rabbitmq'):
+            with self.subTest(name=name):
+                dockerfile = (ROOT / name / 'Dockerfile').read_text()
+                self.assertNotIn('/v3.21/community', dockerfile)
+                self.assertNotIn('>> /etc/apk/repositories', dockerfile)
+                self.assertIn('apk add --no-cache', dockerfile)
+
     def test_heredoc_text_is_not_an_add_or_from_instruction(self):
         for body in ('add table inet filter', 'from alpine:latest'):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as tmp:
