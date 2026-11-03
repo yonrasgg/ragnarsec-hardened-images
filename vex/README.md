@@ -18,6 +18,9 @@ scanner waiver.
   re-verifies that hash, so a file changed after validation blocks the push.
 - Trivy still applies every other scanner and severity rule. A VEX entry must
   not be used to hide a vulnerability that is present in the image.
+- Pair each VEX with an image structure test that proves the cited vulnerable
+  code or exact version is absent. The exception must fail closed when the
+  image changes.
 
 ## Review
 
