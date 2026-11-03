@@ -179,7 +179,7 @@ def require_vex(path):
         if not re.fullmatch(r'[a-z][a-z0-9.+-]*', package_type):
             raise ValueError('vex-product')
         name, version = unquote(name), unquote(version)
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._~/-]*', name):
+        if not re.fullmatch(r'@?[A-Za-z0-9][A-Za-z0-9._~/-]*', name):
             raise ValueError('vex-product')
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+-]*', version):
             raise ValueError('vex-product-range')
