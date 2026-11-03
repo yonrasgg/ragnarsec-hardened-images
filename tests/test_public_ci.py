@@ -291,6 +291,22 @@ class VexPolicy(unittest.TestCase):
                 self.assertIn(name, images)
                 ci.require_vex(path)
 
+    def test_accepts_scoped_exact_npm_product(self):
+        doc = self._valid()
+        doc['statements'][0]['products'][0]['@id'] = 'pkg:npm/%40npmcli/arborist@7.0.0'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ragnarsec-builder.openvex.json'
+            path.write_text(json.dumps(doc))
+            ci.require_vex(path)
+
+    def test_python_base_guard_rejects_non_vendored_setuptools_70(self):
+        config = (ROOT / 'tests' / 'ragnarsec-python-base.yaml').read_text()
+        self.assertIn('setuptools-70.3.0.dist-info', config)
+        self.assertIn('setuptools-70.3.0.egg-info', config)
+        self.assertIn('pip/_vendor', config)
+        self.assertIn('package_index.py', config)
+        self.assertIn('setuptools==70.3.0', config)
+
     def test_vex_rejects_unscoped_or_incomplete_statements(self):
         cases = {
             'empty-statements': lambda d: d.update(statements=[]),
