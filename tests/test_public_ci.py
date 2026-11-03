@@ -98,38 +98,40 @@ class ImagePlanning(unittest.TestCase):
             cmd.assert_called_once_with('docker', 'buildx', 'inspect', capture=True)
 
     def test_validation_builds_single_platform_manifests_without_buildx_attestations(self):
-        with tempfile.TemporaryDirectory() as tmp, \
-             patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
-             patch.object(ci, 'require_platforms_available'), \
-             patch.object(ci, 'require_local_parent_builder'):
-            output = Path(tmp) / 'validated'
+        for platform in ('linux/amd64', 'linux/arm64'):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as tmp, \
+                 patch.dict(ci.os.environ, {'PLATFORMS': platform}), \
+                 patch.object(ci, 'require_platforms_available'), \
+                 patch.object(ci, 'require_local_parent_builder'):
+                output = Path(tmp) / 'validated'
 
-            def fake(*args, capture=False):
-                if args[:3] == ('docker', 'image', 'inspect'):
-                    value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
-                    return subprocess.CompletedProcess([], 0, stdout=value)
-                if args[:2] == ('trivy', 'image') and '--output' in args:
-                    Path(args[args.index('--output') + 1]).write_text('{}')
-                return subprocess.CompletedProcess([], 0, stdout='')
+                def fake(*args, capture=False):
+                    if args[:3] == ('docker', 'image', 'inspect'):
+                        value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
+                        return subprocess.CompletedProcess([], 0, stdout=value)
+                    if args[:2] == ('trivy', 'image') and '--output' in args:
+                        Path(args[args.index('--output') + 1]).write_text('{}')
+                    return subprocess.CompletedProcess([], 0, stdout='')
 
-            with patch.object(ci, 'command', side_effect=fake) as cmd:
-                ci.validate('ragnarsec-base', 'test', output)
-            builds = [call.args for call in cmd.call_args_list
-                      if call.args[:3] == ('docker', 'buildx', 'build')]
-            self.assertEqual(len(builds), 1)
-            self.assertIn('--provenance=false', builds[0])
-            self.assertIn('--sbom=false', builds[0])
-            scans = [call.args for call in cmd.call_args_list
-                      if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
-            self.assertEqual(len(scans), 1)
-            self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
-            structure_tests = [call.args for call in cmd.call_args_list
-                               if call.args[:2] == ('container-structure-test', 'test')]
-            self.assertEqual(len(structure_tests), 1)
-            self.assertEqual(
-                structure_tests[0][structure_tests[0].index('--platform') + 1],
-                'linux/amd64')
-            self.assertTrue((output / 'validated.json').is_file())
+                with patch.object(ci, 'command', side_effect=fake) as cmd:
+                    ci.validate('ragnarsec-base', 'test', output)
+                builds = [call.args for call in cmd.call_args_list
+                          if call.args[:3] == ('docker', 'buildx', 'build')]
+                self.assertEqual(len(builds), 1)
+                self.assertEqual(builds[0][builds[0].index('--platform') + 1], platform)
+                self.assertIn('--provenance=false', builds[0])
+                self.assertIn('--sbom=false', builds[0])
+                scans = [call.args for call in cmd.call_args_list
+                          if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
+                self.assertEqual(len(scans), 1)
+                self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
+                structure_tests = [call.args for call in cmd.call_args_list
+                                   if call.args[:2] == ('container-structure-test', 'test')]
+                self.assertEqual(len(structure_tests), 1)
+                self.assertEqual(
+                    structure_tests[0][structure_tests[0].index('--platform') + 1],
+                    platform)
+                self.assertTrue((output / 'validated.json').is_file())
 
     def test_base_min_sbom_requires_only_shipped_apk_packages(self):
         expected = ci.BASE_MIN_APK_PACKAGES
@@ -508,14 +510,13 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('HEAD^2',provenance)
     def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
-        self.assertIn('sync/development-to-staging-arm64-fix-20261102',provenance)
-        self.assertIn('8d4808939736ea5a2e6d3000258c471ba1a6ccf5',provenance)
-        self.assertNotIn('sync/development-to-staging-main-gate-20261102',provenance)
-        self.assertNotIn('99cc8d99222cc046968913c8d4dfb37df339e26f',provenance)
-        self.assertIn('sync/staging-to-main-arm64-fix-20261102',provenance)
+        self.assertIn('sync/development-to-staging-arm64-test-v2-20261102',provenance)
+        self.assertIn('9ad4d91ed7701914254ab6952bc4389f0de0b0bd',provenance)
+        self.assertNotIn('sync/development-to-staging-arm64-fix-20261102',provenance)
+        self.assertNotIn('8d4808939736ea5a2e6d3000258c471ba1a6ccf5',provenance)
+        self.assertIn('sync/staging-to-main-arm64-test-v2-20261102',provenance)
         self.assertIn('d2072d431c2ebc64ba346da7eadb98b5b0f18cbd',provenance)
-        self.assertNotIn('sync/staging-to-main-20261102',provenance)
-        self.assertNotIn('4d544f9c29fd469fc4ef8c97221237ae5a76ffc4',provenance)
+        self.assertNotIn('sync/staging-to-main-arm64-fix-20261102',provenance)
         self.assertIn('git merge-base --is-ancestor "origin/$base" "$commit"',provenance)
         self.assertIn('origin/${source_branch}^{tree}',provenance)
         self.assertIn('require_one_time_sync "$head" staging',provenance)
