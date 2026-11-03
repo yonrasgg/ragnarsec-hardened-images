@@ -16,7 +16,7 @@ commandTests:
   - name: 'Node Version'
     command: 'node'
     args: ['--version']
-    expectedOutput: ['v22']
+    expectedOutput: ['v24']
   - name: 'NPM Version'
     command: 'npm'
     args: ['--version']
