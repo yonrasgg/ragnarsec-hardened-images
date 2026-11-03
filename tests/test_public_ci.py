@@ -264,6 +264,157 @@ class ImagePlanning(unittest.TestCase):
                 if a[:2] in (('cosign', 'sign'), ('cosign', 'attest')):
                     self.assertEqual(a[a.index('--key') + 1], str(p / 'cosign.key'))
 
+class VexPolicy(unittest.TestCase):
+    def _valid(self):
+        return {
+            '@context': 'https://openvex.dev/ns/v0.2.0',
+            '@id': 'https://github.com/yonrasgg/ragnarsec-hardened-images/vex/test',
+            'author': 'RagnarSec',
+            'timestamp': '2026-11-03T00:00:00Z',
+            'version': 1,
+            'statements': [{
+                'vulnerability': {'name': 'CVE-2025-47273'},
+                'products': [{'@id': 'pkg:pypi/setuptools@70.3.0'}],
+                'status': 'not_affected',
+                'justification': 'vulnerable_code_not_present',
+                'impact_statement': 'Only pkg_resources is vendored; the vulnerable module is absent.',
+            }],
+        }
+
+    def test_repository_vex_files_match_catalog_images(self):
+        files = sorted((ROOT / 'vex').glob('*.openvex.json'))
+        self.assertTrue(files)
+        images = ci.catalog()
+        for path in files:
+            name = path.name.removesuffix('.openvex.json')
+            with self.subTest(path=path.name):
+                self.assertIn(name, images)
+                ci.require_vex(path)
+
+    def test_accepts_scoped_exact_npm_product(self):
+        doc = self._valid()
+        doc['statements'][0]['products'][0]['@id'] = 'pkg:npm/%40npmcli/arborist@7.0.0'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ragnarsec-builder.openvex.json'
+            path.write_text(json.dumps(doc))
+            ci.require_vex(path)
+
+    def test_python_base_guard_rejects_non_vendored_setuptools_70(self):
+        config = (ROOT / 'tests' / 'ragnarsec-python-base.yaml').read_text()
+        self.assertIn('setuptools-70.3.0.dist-info', config)
+        self.assertIn('setuptools-70.3.0.egg-info', config)
+        self.assertIn('pip/_vendor', config)
+        self.assertIn('package_index.py', config)
+        self.assertIn('setuptools==70.3.0', config)
+
+    def test_vex_rejects_unscoped_or_incomplete_statements(self):
+        cases = {
+            'empty-statements': lambda d: d.update(statements=[]),
+            'missing-author': lambda d: d.pop('author'),
+            'bad-timestamp': lambda d: d.update(timestamp='yesterday'),
+            'bad-vulnerability': lambda d: d['statements'][0]['vulnerability'].update(name='CVE-2025'),
+            'product-without-purl': lambda d: d['statements'][0]['products'][0].update({'@id': 'setuptools@70.3.0'}),
+            'product-with-range': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:npm/example@^1.2.3'}),
+            'product-with-empty-version': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/setuptools@'}),
+            'product-with-encoded-wildcard': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/setuptools@%2A'}),
+            'product-with-wildcard-name': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/*@70.3.0'}),
+            'product-with-qualifiers': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/setuptools@70.3.0?arch=amd64'}),
+            'multiple-products': lambda d: d['statements'][0].update(products=[
+                {'@id': 'pkg:pypi/setuptools@70.3.0'},
+                {'@id': 'pkg:pypi/pip@26.3'}]),
+            'missing-justification': lambda d: d['statements'][0].pop('justification'),
+            'bad-justification': lambda d: d['statements'][0].update(justification='because'),
+            'missing-impact': lambda d: d['statements'][0].pop('impact_statement'),
+            'empty-impact': lambda d: d['statements'][0].update(impact_statement=' '),
+            'bad-status': lambda d: d['statements'][0].update(status='probably-fine'),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                doc = self._valid()
+                mutate(doc)
+                path = Path(tmp) / 'ragnarsec-base.openvex.json'
+                path.write_text(json.dumps(doc))
+                with self.assertRaises(ValueError):
+                    ci.require_vex(path)
+
+    def test_validate_applies_vex_only_to_the_matching_image(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
+             patch.object(ci, 'require_platforms_available'), \
+             patch.object(ci, 'require_local_parent_builder'):
+            output = Path(tmp) / 'validated'
+
+            def fake(*args, capture=False):
+                if args[:3] == ('docker', 'image', 'inspect'):
+                    value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
+                    return subprocess.CompletedProcess([], 0, stdout=value)
+                if args[:2] == ('trivy', 'image') and '--output' in args:
+                    Path(args[args.index('--output') + 1]).write_text('{}')
+                return subprocess.CompletedProcess([], 0, stdout='')
+
+            with patch.object(ci, 'command', side_effect=fake) as cmd:
+                ci.validate('ragnarsec-python-base', 'test', output)
+            scans = [call.args for call in cmd.call_args_list
+                     if call.args[:2] == ('trivy', 'image')
+                     and '--severity' in call.args
+                     and '--exit-on-eol' in call.args]
+            self.assertEqual(len(scans), 2)
+            vexed = [args for args in scans if '--vex' in args]
+            self.assertEqual(len(vexed), 1)
+            snapshot = Path(vexed[0][vexed[0].index('--vex') + 1])
+            self.assertEqual(snapshot.parent, output)
+            self.assertEqual(snapshot.name, 'ragnarsec-python-base.openvex.json')
+            self.assertEqual(
+                snapshot.read_bytes(),
+                (ROOT / 'vex/ragnarsec-python-base.openvex.json').read_bytes())
+            receipts = json.loads((output / 'validated.json').read_text())
+            by_name = {r['name']: r for r in receipts}
+            self.assertNotIn('vex', by_name['ragnarsec-base'])
+            self.assertEqual(by_name['ragnarsec-python-base']['vex'],
+                             'vex/ragnarsec-python-base.openvex.json')
+            self.assertEqual(
+                by_name['ragnarsec-python-base']['vex_sha256'],
+                hashlib.sha256(snapshot.read_bytes()).hexdigest())
+
+    def test_vex_path_cannot_escape_repository_vex_directory(self):
+        for name in ('../ragnarsec-base', 'ragnarsec-base/../../x', 'unknown'):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError):
+                    ci.vex_path(name)
+
+    def test_publish_rejects_changed_vex_before_push(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            (p / 'sbom.json').write_text('{}')
+            (p / 'cosign.key').write_text('key')
+            receipts = []
+            for name, platform in (('ragnarsec-base', 'linux/amd64'),
+                                   ('ragnarsec-python-base', 'linux/amd64')):
+                receipt = {'ref': ci.REGISTRY + name + ':test-amd64',
+                           'name': name, 'platform': platform,
+                           'id': 'sha256:local-image-id', 'sbom': 'sbom.json',
+                           'sbom_sha256': hashlib.sha256(b'{}').hexdigest()}
+                if name == 'ragnarsec-python-base':
+                    receipt['vex'] = 'vex/ragnarsec-python-base.openvex.json'
+                    receipt['vex_sha256'] = '0' * 64
+                receipts.append(receipt)
+            (p / 'validated.json').write_text(json.dumps(receipts))
+
+            def fake(*args, capture=False):
+                if args[:2] == ('cosign', 'public-key'):
+                    Path(args[args.index('--outfile') + 1]).write_text('pub')
+                if args[:3] == ('docker', 'image', 'inspect'):
+                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
+                return subprocess.CompletedProcess([], 0, stdout='')
+
+            env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
+                   'PLATFORMS': 'linux/amd64'}
+            with patch.dict(ci.os.environ, env), patch.object(ci, 'command', side_effect=fake) as cmd:
+                with self.assertRaisesRegex(ValueError, 'vex-changed'):
+                    ci.publish('ragnarsec-python-base', 'test', p)
+                self.assertFalse(any(c.args[:2] == ('docker', 'push') for c in cmd.call_args_list))
+
+
 class DockerfilePolicy(unittest.TestCase):
     def test_shared_base_uses_supported_alpine_pin_and_matching_manifest(self):
         base = (ROOT / 'base' / 'Dockerfile').read_text()
@@ -510,13 +661,14 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('HEAD^2',provenance)
     def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
-        self.assertIn('sync/development-to-staging-arm64-test-v2-20261102',provenance)
-        self.assertIn('9ad4d91ed7701914254ab6952bc4389f0de0b0bd',provenance)
-        self.assertNotIn('sync/development-to-staging-arm64-fix-20261102',provenance)
-        self.assertNotIn('8d4808939736ea5a2e6d3000258c471ba1a6ccf5',provenance)
-        self.assertIn('sync/staging-to-main-arm64-test-v2-20261102',provenance)
-        self.assertIn('d2072d431c2ebc64ba346da7eadb98b5b0f18cbd',provenance)
-        self.assertNotIn('sync/staging-to-main-arm64-fix-20261102',provenance)
+        self.assertIn('sync/development-to-staging-vex-20261103',provenance)
+        self.assertIn('be401b0e4b6f4463e419ee4e67f0d567221ccc9d',provenance)
+        self.assertNotIn('sync/development-to-staging-arm64-test-v2-20261102',provenance)
+        self.assertNotIn('9ad4d91ed7701914254ab6952bc4389f0de0b0bd',provenance)
+        self.assertIn('sync/staging-to-main-vex-20261103',provenance)
+        self.assertIn('faaf17460b6e828c02e455665015fb05828b1c87',provenance)
+        self.assertNotIn('sync/staging-to-main-arm64-test-v2-20261102',provenance)
+        self.assertNotIn('d2072d431c2ebc64ba346da7eadb98b5b0f18cbd',provenance)
         self.assertIn('git merge-base --is-ancestor "origin/$base" "$commit"',provenance)
         self.assertIn('origin/${source_branch}^{tree}',provenance)
         self.assertIn('require_one_time_sync "$head" staging',provenance)
