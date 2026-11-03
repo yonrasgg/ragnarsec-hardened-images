@@ -1,0 +1,22 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/yonrasgg/ragnarsec-hardened-images/vex/ragnarsec-python-pdf/CVE-2025-47273",
+  "author": "RagnarSec",
+  "timestamp": "2026-11-02T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2025-47273"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/setuptools@70.3.0"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The python-pdf image inherits pip 26.3 from python-base. pip vendors only pkg_resources from setuptools 70.3.0; the affected package index and upload/download modules are absent, and the virtual environment carries setuptools 84.2.1. A direct scan of this image reported this single HIGH; no installed setuptools 70.3.0 was found."
+    }
+  ]
+}
