@@ -298,7 +298,14 @@ class VexPolicy(unittest.TestCase):
             'bad-timestamp': lambda d: d.update(timestamp='yesterday'),
             'bad-vulnerability': lambda d: d['statements'][0]['vulnerability'].update(name='CVE-2025'),
             'product-without-purl': lambda d: d['statements'][0]['products'][0].update({'@id': 'setuptools@70.3.0'}),
-            'product-with-range': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/setuptools@>=70'}),
+            'product-with-range': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:npm/example@^1.2.3'}),
+            'product-with-empty-version': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/setuptools@'}),
+            'product-with-encoded-wildcard': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/setuptools@%2A'}),
+            'product-with-wildcard-name': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/*@70.3.0'}),
+            'product-with-qualifiers': lambda d: d['statements'][0]['products'][0].update({'@id': 'pkg:pypi/setuptools@70.3.0?arch=amd64'}),
+            'multiple-products': lambda d: d['statements'][0].update(products=[
+                {'@id': 'pkg:pypi/setuptools@70.3.0'},
+                {'@id': 'pkg:pypi/pip@26.3'}]),
             'missing-justification': lambda d: d['statements'][0].pop('justification'),
             'bad-justification': lambda d: d['statements'][0].update(justification='because'),
             'missing-impact': lambda d: d['statements'][0].pop('impact_statement'),
@@ -338,8 +345,12 @@ class VexPolicy(unittest.TestCase):
             self.assertEqual(len(scans), 2)
             vexed = [args for args in scans if '--vex' in args]
             self.assertEqual(len(vexed), 1)
-            self.assertTrue(vexed[0][vexed[0].index('--vex') + 1].endswith(
-                'vex/ragnarsec-python-base.openvex.json'))
+            snapshot = Path(vexed[0][vexed[0].index('--vex') + 1])
+            self.assertEqual(snapshot.parent, output)
+            self.assertEqual(snapshot.name, 'ragnarsec-python-base.openvex.json')
+            self.assertEqual(
+                snapshot.read_bytes(),
+                (ROOT / 'vex/ragnarsec-python-base.openvex.json').read_bytes())
             receipts = json.loads((output / 'validated.json').read_text())
             by_name = {r['name']: r for r in receipts}
             self.assertNotIn('vex', by_name['ragnarsec-base'])
@@ -347,7 +358,7 @@ class VexPolicy(unittest.TestCase):
                              'vex/ragnarsec-python-base.openvex.json')
             self.assertEqual(
                 by_name['ragnarsec-python-base']['vex_sha256'],
-                hashlib.sha256((ROOT / 'vex/ragnarsec-python-base.openvex.json').read_bytes()).hexdigest())
+                hashlib.sha256(snapshot.read_bytes()).hexdigest())
 
     def test_vex_path_cannot_escape_repository_vex_directory(self):
         for name in ('../ragnarsec-base', 'ragnarsec-base/../../x', 'unknown'):

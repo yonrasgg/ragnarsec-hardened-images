@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = 'ghcr.io/yonrasgg/'
@@ -165,15 +166,23 @@ def require_vex(path):
                 r'(?:CVE-\d{4}-\d{4,}|GHSA(?:-[a-z0-9]{4}){3})', name, re.I):
             raise ValueError('vex-vulnerability')
         products = statement.get('products')
-        if not isinstance(products, list) or not products:
+        if not isinstance(products, list) or len(products) != 1:
             raise ValueError('vex-products')
-        for product in products:
-            purl = product.get('@id') if isinstance(product, dict) else None
-            if not isinstance(purl, str) or not re.fullmatch(r'pkg:[a-z0-9.+-]+/[^@\s]+@[^@\s]+', purl):
-                raise ValueError('vex-product')
-            version = purl.rsplit('@', 1)[1]
-            if any(token in version for token in ('*', '<', '>', '|', ',')):
-                raise ValueError('vex-product-range')
+        purl = products[0].get('@id') if isinstance(products[0], dict) else None
+        if (not isinstance(purl, str) or not purl.startswith('pkg:')
+                or '?' in purl or '#' in purl or purl.count('@') != 1):
+            raise ValueError('vex-product')
+        name_part, version = purl[4:].split('@', 1)
+        if '/' not in name_part:
+            raise ValueError('vex-product')
+        package_type, name = name_part.split('/', 1)
+        if not re.fullmatch(r'[a-z][a-z0-9.+-]*', package_type):
+            raise ValueError('vex-product')
+        name, version = unquote(name), unquote(version)
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._~/-]*', name):
+            raise ValueError('vex-product')
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+-]*', version):
+            raise ValueError('vex-product-range')
         status = statement.get('status')
         if status not in VEX_STATUSES:
             raise ValueError('vex-status')
@@ -189,13 +198,17 @@ def require_vex(path):
                 raise ValueError('vex-action')
 
 
-def _vex_receipt(name):
+def _vex_snapshot(name, output):
+    """Freeze the reviewed VEX once; the scanner must read exactly these bytes."""
     path = vex_path(name)
     if path is None:
-        return {}
+        return {}, None
     require_vex(path)
-    return {'vex': path.relative_to(ROOT).as_posix(),
-            'vex_sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+    data = path.read_bytes()
+    snapshot = output / (name + VEX_SUFFIX)
+    snapshot.write_bytes(data)
+    return ({'vex': path.relative_to(ROOT).as_posix(),
+             'vex_sha256': hashlib.sha256(data).hexdigest()}, str(snapshot))
 
 
 def validate(selected, tag, output):
@@ -212,7 +225,7 @@ def validate(selected, tag, output):
         test = ROOT / 'tests' / (name + '.yaml')
         if not test.is_file():
             raise ValueError('missing-structure-test')
-        vex = _vex_receipt(name)
+        vex, vex_file = _vex_snapshot(name, output)
         command('hadolint', '--ignore', 'DL3007', '--failure-threshold', 'warning', image['dockerfile'])
         problems = policy.check_dockerfile(ROOT / image['dockerfile'])
         cfg = json.loads((ROOT / 'policy.json').read_text())
@@ -244,8 +257,8 @@ def validate(selected, tag, output):
             scan = ['trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
                     'misconfig,secret', '--ignorefile', '/dev/null']
-            if vex:
-                scan += ['--vex', vex['vex']]
+            if vex_file:
+                scan += ['--vex', vex_file]
             command(*scan, ref)
             command('trivy', 'image', '--scanners', 'license', '--format', 'table', '--exit-code', '0', ref)
             sbom = output / (name + '.' + suffix + '.cdx.json')
