@@ -84,6 +84,11 @@ checks the built bytes before any registry push.
 | Image evidence | Structure tests, size budget, vulnerability/secret/misconfiguration scans, license scan, and a per-platform SBOM correspond to the **same local build**. HIGH/CRITICAL findings and end-of-life operating systems block validation. |
 | Release | After validation on `main`, `PUBLISH` and human approval are required. Publication pushes the validated images, assembles the index, and verifies digest-bound signatures and attestations. |
 
+Documented scanner exceptions are OpenVEX files under [`vex/`](vex/README.md).
+Each file must name one vulnerability and one exact package version, is recorded
+with its SHA-256 in `validated.json`, and is re-verified before publication.
+A VEX entry never disables the other findings in that scan.
+
 The pipeline defaults to `linux/amd64,linux/arm64`, but requested platforms
 must be supported by the runner; a single-platform run is **not** multi-platform
 evidence. Neither a successful source check nor the existence of a Jenkins

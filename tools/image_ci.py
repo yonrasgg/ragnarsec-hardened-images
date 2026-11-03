@@ -6,6 +6,7 @@ images. The pinned CI tools are AMD64-only; native ARM64 hosts are not yet
 supported. No production hosts, deployment, global Docker cleanup or caches.
 """
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -13,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = 'ghcr.io/yonrasgg/'
@@ -25,6 +27,13 @@ ALLOWED_PLATFORMS = {'linux/amd64': 'amd64', 'linux/arm64': 'arm64'}
 QEMU_HANDLERS = {'amd64': 'qemu-x86_64', 'arm64': 'qemu-aarch64'}
 BASE_MIN_APK_PACKAGES = {'alpine-baselayout-data', 'alpine-release',
                          'ca-certificates-bundle', 'musl', 'tini'}
+VEX_DIR = 'vex'
+VEX_SUFFIX = '.openvex.json'
+VEX_STATUSES = {'not_affected', 'affected', 'fixed', 'under_investigation'}
+VEX_JUSTIFICATIONS = {'component_not_present', 'vulnerable_code_not_present',
+                      'vulnerable_code_not_in_execute_path',
+                      'vulnerable_code_cannot_be_controlled_by_adversary',
+                      'inline_mitigations_already_exist'}
 
 
 def platforms():
@@ -116,6 +125,92 @@ def require_base_min_inventory(sbom):
         raise ValueError('base-min-sbom-package-inventory-mismatch')
 
 
+def vex_path(name):
+    """Return the reviewed VEX document for one catalog image, if any."""
+    if name not in catalog():
+        raise ValueError('unknown-image')
+    path = ROOT / VEX_DIR / (name + VEX_SUFFIX)
+    return path if path.is_file() else None
+
+
+def require_vex(path):
+    """Reject broad or undocumented suppressions before Trivy sees them."""
+    doc = json.loads(path.read_text())
+    if not isinstance(doc, dict):
+        raise ValueError('vex-not-object')
+    if not isinstance(doc.get('@context'), str) or 'openvex.dev/ns/' not in doc['@context']:
+        raise ValueError('vex-context')
+    for field in ('@id', 'author'):
+        if not isinstance(doc.get(field), str) or not doc[field].strip():
+            raise ValueError('vex-' + field.lstrip('@'))
+    timestamp = doc.get('timestamp')
+    if not isinstance(timestamp, str):
+        raise ValueError('vex-timestamp')
+    try:
+        parsed = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+    except ValueError:
+        raise ValueError('vex-timestamp')
+    if parsed.tzinfo is None:
+        raise ValueError('vex-timestamp')
+    if not isinstance(doc.get('version'), int) or isinstance(doc['version'], bool) or doc['version'] < 1:
+        raise ValueError('vex-version')
+    statements = doc.get('statements')
+    if not isinstance(statements, list) or not statements:
+        raise ValueError('vex-statements')
+    for statement in statements:
+        if not isinstance(statement, dict):
+            raise ValueError('vex-statement')
+        vulnerability = statement.get('vulnerability')
+        name = vulnerability.get('name') if isinstance(vulnerability, dict) else None
+        if not isinstance(name, str) or not re.fullmatch(
+                r'(?:CVE-\d{4}-\d{4,}|GHSA(?:-[a-z0-9]{4}){3})', name, re.I):
+            raise ValueError('vex-vulnerability')
+        products = statement.get('products')
+        if not isinstance(products, list) or len(products) != 1:
+            raise ValueError('vex-products')
+        purl = products[0].get('@id') if isinstance(products[0], dict) else None
+        if (not isinstance(purl, str) or not purl.startswith('pkg:')
+                or '?' in purl or '#' in purl or purl.count('@') != 1):
+            raise ValueError('vex-product')
+        name_part, version = purl[4:].split('@', 1)
+        if '/' not in name_part:
+            raise ValueError('vex-product')
+        package_type, name = name_part.split('/', 1)
+        if not re.fullmatch(r'[a-z][a-z0-9.+-]*', package_type):
+            raise ValueError('vex-product')
+        name, version = unquote(name), unquote(version)
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._~/-]*', name):
+            raise ValueError('vex-product')
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+-]*', version):
+            raise ValueError('vex-product-range')
+        status = statement.get('status')
+        if status not in VEX_STATUSES:
+            raise ValueError('vex-status')
+        impact = statement.get('impact_statement')
+        if not isinstance(impact, str) or not impact.strip():
+            raise ValueError('vex-impact')
+        if status == 'not_affected':
+            if statement.get('justification') not in VEX_JUSTIFICATIONS:
+                raise ValueError('vex-justification')
+        elif status == 'affected':
+            action = statement.get('action_statement')
+            if not isinstance(action, str) or not action.strip():
+                raise ValueError('vex-action')
+
+
+def _vex_snapshot(name, output):
+    """Freeze the reviewed VEX once; the scanner must read exactly these bytes."""
+    path = vex_path(name)
+    if path is None:
+        return {}, None
+    require_vex(path)
+    data = path.read_bytes()
+    snapshot = output / (name + VEX_SUFFIX)
+    snapshot.write_bytes(data)
+    return ({'vex': path.relative_to(ROOT).as_posix(),
+             'vex_sha256': hashlib.sha256(data).hexdigest()}, str(snapshot))
+
+
 def validate(selected, tag, output):
     if not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,119}', tag):
         raise ValueError('invalid-image-tag')
@@ -130,6 +225,7 @@ def validate(selected, tag, output):
         test = ROOT / 'tests' / (name + '.yaml')
         if not test.is_file():
             raise ValueError('missing-structure-test')
+        vex, vex_file = _vex_snapshot(name, output)
         command('hadolint', '--ignore', 'DL3007', '--failure-threshold', 'warning', image['dockerfile'])
         problems = policy.check_dockerfile(ROOT / image['dockerfile'])
         cfg = json.loads((ROOT / 'policy.json').read_text())
@@ -158,9 +254,12 @@ def validate(selected, tag, output):
                 raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,
                     '--image', ref, '--config', str(test))
-            command('trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
+            scan = ['trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
-                    'misconfig,secret', '--ignorefile', '/dev/null', ref)
+                    'misconfig,secret', '--ignorefile', '/dev/null']
+            if vex_file:
+                scan += ['--vex', vex_file]
+            command(*scan, ref)
             command('trivy', 'image', '--scanners', 'license', '--format', 'table', '--exit-code', '0', ref)
             sbom = output / (name + '.' + suffix + '.cdx.json')
             command('trivy', 'image', '--format', 'cyclonedx', '--output', str(sbom), ref)
@@ -168,7 +267,8 @@ def validate(selected, tag, output):
                 require_base_min_inventory(sbom)
             receipts.append({'ref': ref, 'name': name, 'platform': platform, 'id': image_id,
                              'sbom': sbom.name,
-                             'sbom_sha256': hashlib.sha256(sbom.read_bytes()).hexdigest()})
+                             'sbom_sha256': hashlib.sha256(sbom.read_bytes()).hexdigest(),
+                             **vex})
     (output / 'validated.json').write_text(json.dumps(receipts, indent=2) + '\n')
     print(json.dumps({'validated_images': len(receipts), 'platforms': targets, 'published': False}))
 
@@ -223,6 +323,12 @@ def publish(selected, tag, output):
             raise ValueError('sbom-path')
         if hashlib.sha256((output / r['sbom']).read_bytes()).hexdigest() != r['sbom_sha256']:
             raise ValueError('sbom-changed')
+        if r.get('vex'):
+            expected = VEX_DIR + '/' + r['name'] + VEX_SUFFIX
+            path = ROOT / r['vex']
+            if (r['vex'] != expected or not path.is_file()
+                    or hashlib.sha256(path.read_bytes()).hexdigest() != r.get('vex_sha256')):
+                raise ValueError('vex-changed')
         actual = command('docker', 'image', 'inspect', '--format={{.Id}}', r['ref'], capture=True).stdout.strip()
         if actual != r['id']:
             raise ValueError('validated-image-changed')

@@ -1,0 +1,22 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/yonrasgg/ragnarsec-hardened-images/vex/ragnarsec-python-base/CVE-2025-47273",
+  "author": "RagnarSec",
+  "timestamp": "2026-11-02T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2025-47273"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/setuptools@70.3.0"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "pip vendors only pkg_resources from setuptools 70.3.0. The affected package index and upload/download modules are absent, and the application virtual environment carries setuptools 84.2.1."
+    }
+  ]
+}
