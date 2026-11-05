@@ -19,6 +19,8 @@ USER root
 
 # SECURITY: Upgrade system packages to patch CVEs, then install build tools + Node.js.
 # Alpine ships Node.js LTS natively — no external repo (NodeSource) needed.
+ARG UNDICI_VERSION=6.29.1
+ARG UNDICI_SHA256=29c4b8e0b2d86cb8795571c1959012ce057a14ecfd34858335f47c31e770a04f
 # hadolint ignore=DL3018
 RUN apk upgrade --no-cache \
     && apk add --no-cache \
@@ -28,6 +30,14 @@ RUN apk upgrade --no-cache \
     git \
     curl \
     && npm install -g npm@latest \
+    && curl -fsSLo /tmp/undici.tgz \
+        "https://registry.npmjs.org/undici/-/undici-${UNDICI_VERSION}.tgz" \
+    && printf '%s  %s\n' "${UNDICI_SHA256}" /tmp/undici.tgz > /tmp/undici.tgz.sha256 \
+    && sha256sum -c /tmp/undici.tgz.sha256 \
+    && rm -rf /usr/local/lib/node_modules/npm/node_modules/undici \
+    && mkdir -p /usr/local/lib/node_modules/npm/node_modules/undici \
+    && tar -xzf /tmp/undici.tgz -C /usr/local/lib/node_modules/npm/node_modules/undici --strip-components=1 \
+    && rm -f /tmp/undici.tgz /tmp/undici.tgz.sha256 \
     && npm cache clean --force
 
 # Smoke test: Verify versions

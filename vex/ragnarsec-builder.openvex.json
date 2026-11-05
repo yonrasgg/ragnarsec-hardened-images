@@ -1,0 +1,24 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/yonrasgg/ragnarsec-hardened-images/vex/ragnarsec-builder/CVE-2025-47273",
+  "author": "Geovanny Alberto Alp\u00edzar Sandino",
+  "timestamp": "2026-11-02T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2025-47273"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/setuptools@70.3.0"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The builder image inherits pip 26.3 from python-base and pins npm's nested undici to 6.29.1. pip vendors only pkg_resources from setuptools 70.3.0; the affected package index and upload/download modules are absent, and the virtual environment carries setuptools 84.2.1. A direct scan of this image after the undici update reported only this HIGH."
+    }
+  ],
+  "owner": "Geovanny Alberto Alp\u00edzar Sandino",
+  "expires_on": "2027-02-02T00:00:00Z"
+}
