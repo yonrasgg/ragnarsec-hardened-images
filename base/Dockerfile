@@ -18,7 +18,7 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
         ca-certificates=20261020-r0 \
-        tzdata=2026f-r0 \
+        tzdata=2026e-r0 \
         tini=0.19.0-r3 \
     && addgroup -g 1000 ragnarsec \
     && adduser -u 1000 -G ragnarsec -s /sbin/nologin -D -h /home/ragnarsec ragnarsec

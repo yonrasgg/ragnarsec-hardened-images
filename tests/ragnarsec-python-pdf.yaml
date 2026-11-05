@@ -92,6 +92,21 @@ commandTests:
     expectedOutput: ['OK']
     exitCode: 0
 
+  # Keep the python-pdf VEX honest: the vulnerable module and installed version
+  # must stay absent, and pip must still vendor the version the VEX names.
+  - name: 'VEX scope: no installed setuptools 70.3.0 and no vendored package index'
+    command: 'sh'
+    args:
+      - '-c'
+      - |
+        set -e
+        find /app /usr/lib/python3.* \( -name setuptools-70.3.0.dist-info -o -name setuptools-70.3.0.egg-info -o -name 'setuptools-70.3.0-py*.egg-info' -o -name 'setuptools-70.3.0-py*.egg' \) -print -quit > /tmp/vex1
+        find /app /usr/lib/python3.* -path '*pip/_vendor*' -name package_index.py -print -quit > /tmp/vex2
+        [ ! -s /tmp/vex1 ]
+        [ ! -s /tmp/vex2 ]
+        grep -qx 'setuptools==70.3.0' /app/venv/lib/python3.*/site-packages/pip/_vendor/vendor.txt
+    exitCode: 0
+
   # Font availability
   - name: 'Fonts Available'
     command: 'fc-list'
