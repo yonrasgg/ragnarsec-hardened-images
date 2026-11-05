@@ -10,7 +10,7 @@ This document describes an image interface, not a deployed system.
 
 - Declared `FROM`: `alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a`
   (multi-platform index; validate each platform requested for publication).
-- Pinned packages: `ca-certificates=20261020-r0`, `tzdata=2026e-r0`,
+- Pinned packages: `ca-certificates=20261020-r0`, `tzdata=2026f-r0`,
   `tini=0.19.0-r3`. These versions were checked in the Alpine 3.24 repository
   for amd64; arm64 validation requires a suitable runner.
 
