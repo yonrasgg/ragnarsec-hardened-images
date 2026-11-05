@@ -16,7 +16,7 @@ commandTests:
   - name: 'Node Version'
     command: 'node'
     args: ['--version']
-    expectedOutput: ['v22']
+    expectedOutput: ['v24']
   - name: 'NPM Version'
     command: 'npm'
     args: ['--version']
@@ -36,6 +36,23 @@ commandTests:
   - name: 'Build Tools Available (gcc)'
     command: 'gcc'
     args: ['--version']
+    exitCode: 0
+  - name: 'Pinned npm undici is not vulnerable'
+    command: 'node'
+    args: ['-p', 'require("/usr/local/lib/node_modules/npm/node_modules/undici/package.json").version']
+    expectedOutput: ['6.29.1']
+    exitCode: 0
+  - name: 'VEX scope: no installed setuptools 70.3.0 and no vendored package index'
+    command: 'sh'
+    args:
+      - '-c'
+      - |
+        set -e
+        find /app /usr/lib/python3.* \( -name setuptools-70.3.0.dist-info -o -name setuptools-70.3.0.egg-info -o -name 'setuptools-70.3.0-py*.egg-info' -o -name 'setuptools-70.3.0-py*.egg' \) -print -quit > /tmp/vex1
+        find /app /usr/lib/python3.* -path '*pip/_vendor*' -name package_index.py -print -quit > /tmp/vex2
+        [ ! -s /tmp/vex1 ]
+        [ ! -s /tmp/vex2 ]
+        grep -qx 'setuptools==70.3.0' /app/venv/lib/python3.*/site-packages/pip/_vendor/vendor.txt
     exitCode: 0
 fileExistenceTests:
   - name: 'Venv Activation'
