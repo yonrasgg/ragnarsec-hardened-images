@@ -98,7 +98,13 @@ commandTests:
     command: 'sh'
     args:
       - '-c'
-      - '! find /app /usr/lib/python3.* \( -name "setuptools-70.3.0.dist-info" -o -name "setuptools-70.3.0.egg-info" \) -print -quit | grep -q . && ! find /app /usr/lib/python3.* -path "*pip/_vendor*" -name package_index.py -print -quit | grep -q . && grep -qx "setuptools==70.3.0" /app/venv/lib/python3.*/site-packages/pip/_vendor/vendor.txt'
+      - |
+        set -e
+        find /app /usr/lib/python3.* \( -name setuptools-70.3.0.dist-info -o -name setuptools-70.3.0.egg-info -o -name 'setuptools-70.3.0-py*.egg-info' -o -name 'setuptools-70.3.0-py*.egg' \) -print -quit > /tmp/vex1
+        find /app /usr/lib/python3.* -path '*pip/_vendor*' -name package_index.py -print -quit > /tmp/vex2
+        [ ! -s /tmp/vex1 ]
+        [ ! -s /tmp/vex2 ]
+        grep -qx 'setuptools==70.3.0' /app/venv/lib/python3.*/site-packages/pip/_vendor/vendor.txt
     exitCode: 0
 
   # Font availability
