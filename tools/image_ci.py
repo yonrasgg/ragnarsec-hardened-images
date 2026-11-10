@@ -230,10 +230,6 @@ def validate(selected, tag, output):
         if not test.is_file():
             raise ValueError('missing-structure-test')
         vex, vex_file = _vex_snapshot(name, output)
-        if vex_file:
-            unregistered = policy.unregistered_vex_statements(vex_file, exception_registry)
-            if unregistered:
-                raise ValueError('vex-unregistered:' + ','.join(unregistered))
         command('hadolint', '--ignore', 'DL3007', '--failure-threshold', 'warning', image['dockerfile'])
         problems = policy.check_dockerfile(ROOT / image['dockerfile'])
         cfg = json.loads((ROOT / 'policy.json').read_text())

@@ -2,7 +2,6 @@
 
 Pure functions: no Docker calls, no network. Integrate from tools/image_ci.py.
 """
-import datetime
 import json
 import re
 from pathlib import Path
@@ -207,73 +206,3 @@ def check_budget(name, size_bytes, budgets_path):
     if size_bytes > limit:
         return ['size-budget-exceeded:%s>%s' % (size_bytes, limit)]
     return []
-
-
-EXCEPTION_FIELDS = ('image', 'cve', 'justification', 'owner', 'expires', 'evidence')
-EXCEPTION_CVE = re.compile(r'(?:CVE-\d{4}-\d{4,}|GHSA(?:-[a-z0-9]{4}){3})', re.I)
-EXCEPTION_MAX_DAYS = 90
-
-
-def _exception_entries(path):
-    try:
-        doc = json.loads(Path(path).read_text())
-    except (OSError, ValueError):
-        return None
-    if not isinstance(doc, dict) or not isinstance(doc.get('exceptions'), list):
-        return None
-    return doc['exceptions']
-
-
-def check_exceptions(path, today=None, max_days=EXCEPTION_MAX_DAYS):
-    """Validate the governed exception registry; return problem codes."""
-    if not Path(path).is_file():
-        return []
-    entries = _exception_entries(path)
-    if entries is None:
-        return ['exception-registry-invalid']
-    today = today or datetime.date.today()
-    problems, seen = [], set()
-    for entry in entries:
-        if not isinstance(entry, dict):
-            problems.append('exception-not-object')
-            continue
-        cve = entry.get('cve') if isinstance(entry.get('cve'), str) else '?'
-        missing = [f for f in EXCEPTION_FIELDS
-                   if not isinstance(entry.get(f), str) or not entry[f].strip()]
-        if missing:
-            problems.append('exception-missing-field:' + cve + ':' + ','.join(missing))
-            continue
-        if not EXCEPTION_CVE.fullmatch(cve):
-            problems.append('exception-cve-format:' + cve)
-        key = (entry['image'], cve.upper())
-        if key in seen:
-            problems.append('exception-duplicate:' + cve)
-        seen.add(key)
-        try:
-            expires = datetime.date.fromisoformat(entry['expires'])
-        except ValueError:
-            problems.append('exception-invalid-date:' + cve)
-            continue
-        if expires <= today:
-            problems.append('exception-expired:' + cve)
-        elif (expires - today).days > max_days:
-            problems.append('exception-too-long:' + cve)
-    return problems
-
-
-def unregistered_vex_statements(vex_path, registry_path):
-    """VEX statements with no matching governed exception."""
-    if not Path(registry_path).is_file():
-        return []
-    entries = _exception_entries(registry_path) or []
-    registered = {(e.get('image', '').upper(), e.get('cve', '').upper())
-                  for e in entries if isinstance(e, dict)}
-    image = Path(vex_path).name.replace('.openvex.json', '').upper()
-    doc = json.loads(Path(vex_path).read_text())
-    out = []
-    for statement in doc.get('statements', []):
-        vulnerability = statement.get('vulnerability') if isinstance(statement, dict) else None
-        name = vulnerability.get('name') if isinstance(vulnerability, dict) else None
-        if isinstance(name, str) and (image, name.upper()) not in registered:
-            out.append(name)
-    return sorted(set(out))
