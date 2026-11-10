@@ -220,12 +220,20 @@ def validate(selected, tag, output):
     command('python3', 'tools/publication_guard.py', '.', '--history')
     output.mkdir(mode=0o700, exist_ok=False)
     receipts = []
+    exception_registry = ROOT / VEX_DIR / 'exceptions.json'
+    registry_problems = policy.check_exceptions(exception_registry)
+    if registry_problems:
+        raise ValueError('exception-registry:' + ','.join(registry_problems))
     for image in plan(selected):
         name = image['name']
         test = ROOT / 'tests' / (name + '.yaml')
         if not test.is_file():
             raise ValueError('missing-structure-test')
         vex, vex_file = _vex_snapshot(name, output)
+        if vex_file:
+            unregistered = policy.unregistered_vex_statements(vex_file, exception_registry)
+            if unregistered:
+                raise ValueError('vex-unregistered:' + ','.join(unregistered))
         command('hadolint', '--ignore', 'DL3007', '--failure-threshold', 'warning', image['dockerfile'])
         problems = policy.check_dockerfile(ROOT / image['dockerfile'])
         cfg = json.loads((ROOT / 'policy.json').read_text())

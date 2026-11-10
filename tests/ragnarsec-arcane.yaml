@@ -1,0 +1,35 @@
+schemaVersion: 2.0.0
+metadataTest:
+  user: '1000:1000'
+  exposedPorts: ["3552"]
+  volumes: ["/app/data"]
+fileExistenceTests:
+  - name: 'Arcane binary'
+    path: '/app/arcane'
+    shouldExist: true
+  - name: 'Data directory'
+    path: '/app/data'
+    shouldExist: true
+  - name: 'CA bundle'
+    path: '/etc/ssl/certs/ca-certificates.crt'
+    shouldExist: true
+  - name: 'No shell'
+    path: '/bin/sh'
+    shouldExist: false
+  - name: 'No package manager'
+    path: '/usr/bin/apt'
+    shouldExist: false
+  - name: 'No docker socket baked in'
+    path: '/var/run/docker.sock'
+    shouldExist: false
+commandTests:
+  - name: 'Version'
+    command: '/app/arcane'
+    args: ['version']
+    exitCode: 0
+    expectedOutput: ['Arcane version: 2.17.3']
+  - name: 'Health command'
+    command: '/app/arcane'
+    args: ['health', '--help']
+    exitCode: 0
+    expectedOutput: ['Check API health']
