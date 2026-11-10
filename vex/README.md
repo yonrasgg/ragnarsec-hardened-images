@@ -28,3 +28,22 @@ Re-check each statement when the affected upstream package changes, when the
 scanner database reclassifies the finding, or when the image stops shipping the
 vendored component. Delete the statement as soon as the upstream dependency no
 longer carries the reported version.
+
+## Exception registry
+
+Every VEX statement must be backed by an entry in `exceptions.json`:
+
+```json
+{"exceptions": [{"image": "ragnarsec-python-pdf", "cve": "CVE-2026-12345",
+  "justification": "not reachable in the shipped entrypoint", "owner": "geovanny",
+  "expires": "2027-01-15", "evidence": "vex/ragnarsec-python-pdf.openvex.json"}]}
+```
+
+Rules enforced by `tools/image_policy.py` and wired into `tools/image_ci.py`:
+
+- all six fields are required and non-empty;
+- `expires` must be a future ISO date within 90 days;
+- no duplicate `(image, cve)` pairs;
+- every VEX statement must have a matching entry.
+
+The build fails on any violation, including an expired exception. `policy.json` is not used for this.

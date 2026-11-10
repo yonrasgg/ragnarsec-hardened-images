@@ -36,6 +36,7 @@ pipeline {
       name: 'IMAGE',
       choices: [
         'ragnarsec-alertmanager',
+        'ragnarsec-arcane',
         'ragnarsec-base',
         'ragnarsec-base-min',
         'ragnarsec-builder',
