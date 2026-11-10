@@ -220,6 +220,10 @@ def validate(selected, tag, output):
     command('python3', 'tools/publication_guard.py', '.', '--history')
     output.mkdir(mode=0o700, exist_ok=False)
     receipts = []
+    exception_registry = ROOT / VEX_DIR / 'exceptions.json'
+    registry_problems = policy.check_exceptions(exception_registry)
+    if registry_problems:
+        raise ValueError('exception-registry:' + ','.join(registry_problems))
     for image in plan(selected):
         name = image['name']
         test = ROOT / 'tests' / (name + '.yaml')

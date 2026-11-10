@@ -1,0 +1,28 @@
+{
+  "exceptions": [
+    {
+      "image": "ragnarsec-builder",
+      "cve": "CVE-2025-47273",
+      "justification": "pip vendors only pkg_resources; vulnerable code path not present in the shipped runtime",
+      "owner": "geovanny",
+      "expires": "2027-02-01",
+      "evidence": "vex/ragnarsec-builder.openvex.json"
+    },
+    {
+      "image": "ragnarsec-python-base",
+      "cve": "CVE-2025-47273",
+      "justification": "pip vendors only pkg_resources; vulnerable code path not present in the shipped runtime",
+      "owner": "geovanny",
+      "expires": "2027-02-01",
+      "evidence": "vex/ragnarsec-python-base.openvex.json"
+    },
+    {
+      "image": "ragnarsec-python-pdf",
+      "cve": "CVE-2025-47273",
+      "justification": "pip vendors only pkg_resources; vulnerable code path not present in the shipped runtime",
+      "owner": "geovanny",
+      "expires": "2027-02-01",
+      "evidence": "vex/ragnarsec-python-pdf.openvex.json"
+    }
+  ]
+}
