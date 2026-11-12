@@ -106,7 +106,7 @@ pipeline {
               return 0
             fi
             tree="$(git rev-parse "${commit}^{tree}")"
-            if git log --format='%T' "origin/${branch}" | grep -qx "$tree"; then
+            if git log --format='%T' "origin/${branch}" | grep -x "$tree" >/dev/null; then
               return 0
             fi
             echo "STOP: ${message}" >&2
