@@ -17,12 +17,12 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 
 USER root
 
-# SECURITY: Upgrade system packages to patch CVEs, then install nginx + openssl.
-# hadolint ignore=DL3018
-RUN apk upgrade --no-cache \
-    && apk add --no-cache \
-    nginx \
-    openssl
+# Pin runtime additions to versions recorded in versions.json. Base updates are
+# reviewed separately instead of upgrading the entire inherited filesystem.
+RUN apk add --no-cache \
+    nginx=1.30.6-r0 \
+    openssl=3.5.9-r0 \
+    pcre2=10.49-r0
 
 # Configure Nginx
 # Copy configuration files (overwrites default nginx.conf)
