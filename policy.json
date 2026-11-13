@@ -1,4 +1,4 @@
 {
-  "enforce": ["ragnarsec-base", "ragnarsec-base-min"],
+  "enforce": ["ragnarsec-base", "ragnarsec-base-min", "ragnarsec-nginx"],
   "warn": "*"
 }
