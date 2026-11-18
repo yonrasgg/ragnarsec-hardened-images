@@ -79,6 +79,8 @@ pipeline {
   }
 
   environment {
+    DOCKER_HOST = "unix://${env.XDG_RUNTIME_DIR}/docker.sock"
+    DOCKER_CONTEXT = ''
     PYTHONDONTWRITEBYTECODE = '1'
     PLATFORMS = "${params.PLATFORMS}"
     CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"
@@ -93,6 +95,7 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
+          python3 tools/ci_docker_endpoint.py
           test "$(git rev-parse --is-shallow-repository)" = "false" || {
             echo 'STOP: complete history required; configure a non-shallow checkout.' >&2
             exit 2
@@ -295,7 +298,8 @@ GITLEAKS_CONFIG
   post {
     always {
       sh '''
-        if command -v docker >/dev/null 2>&1; then
+        if command -v docker >/dev/null 2>&1 &&
+           python3 tools/ci_docker_endpoint.py --config-only >/dev/null 2>&1; then
           docker logout ghcr.io >/dev/null 2>&1 || true
         fi
         # Remove every per-build artifact: credentials, pinned tools, receipts
