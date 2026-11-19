@@ -26,6 +26,7 @@ pipeline {
   agent { label 'ragnarsec-linux' }
 
   options {
+    skipDefaultCheckout()
     timeout(time: 60, unit: 'MINUTES')
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '30'))
@@ -91,6 +92,12 @@ pipeline {
   }
 
   stages {
+    stage('Checkout SCM') {
+      steps {
+        checkout scm
+      }
+    }
+
     stage('Provenance') {
       steps {
         sh '''
