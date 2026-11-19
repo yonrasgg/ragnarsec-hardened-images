@@ -12,6 +12,18 @@ import image_ci
 
 
 class CheckoutContract(unittest.TestCase):
+    def test_one_time_main_sync_pins_route_and_single_parent(self):
+        pipeline = (ROOT / "Jenkinsfile").read_text()
+        branch = 'elif [ "$source" = "sync/staging-to-main-node-exporter-20261119" ]; then'
+        self.assertEqual(pipeline.count(branch), 1)
+        lane = pipeline.split(branch, 1)[1].split("\n                else", 1)[0]
+        self.assertIn("main_tip=895dff80d7604475373066451528bc2aaba83087", lane)
+        self.assertIn('require_one_time_sync "$head" main "$main_tip" staging', lane)
+        self.assertIn(
+            'test "$(git rev-list --parents -n 1 "$head")" = "$head $main_tip"', lane
+        )
+        self.assertIn("exit 2", lane)
+
     def test_explicit_scm_checkout_precedes_provenance(self):
         pipeline = (Path(__file__).resolve().parents[1] / "Jenkinsfile").read_text()
         self.assertRegex(pipeline, r"options\s*\{\s*skipDefaultCheckout\(\)")
@@ -24,10 +36,10 @@ class CheckoutContract(unittest.TestCase):
 
     def test_20261119_staging_sync_pins_route_and_single_parent(self):
         pipeline = (Path(__file__).resolve().parents[1] / "Jenkinsfile").read_text()
-        branch = 'elif [ "$source" = "sync/development-to-staging-node-exporter-entrypoint-20261119" ]; then'
+        branch = 'elif [ "$source" = "sync/development-to-staging-release-guard-20261119" ]; then'
         self.assertEqual(pipeline.count(branch), 1)
         lane = pipeline.split(branch, 1)[1].split("\n                else", 1)[0]
-        self.assertIn("staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91", lane)
+        self.assertIn("staging_tip=159609c8fcd6aeac35097bf1fe6fffd962347f10", lane)
         self.assertIn('require_one_time_sync "$head" staging "$staging_tip" development', lane)
         self.assertIn(
             'test "$(git rev-list --parents -n 1 "$head")" = "$head $staging_tip"',
