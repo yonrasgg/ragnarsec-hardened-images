@@ -714,5 +714,20 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
         self.assertIn("params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'", self.pipeline)
 
+    def test_native_arm64_sync_is_exact_and_expires_when_target_moves(self):
+        provenance = self.pipeline.split("stage('Provenance')", 1)[1].split("stage('Contract')", 1)[0]
+        self.assertIn('require_one_time_sync "$@"', provenance)
+        self.assertIn('git rev-parse "origin/${base}")" = "$expected_tip"', provenance)
+        self.assertIn('git rev-parse "origin/${source_branch}^{tree}"', provenance)
+        self.assertIn('git rev-list --parents -n 1 "$1")" = "$1 $3"', provenance)
+        for source, target, tip, branch in (
+            ('development', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('staging', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
+        ):
+            branch_name = f'sync/{source}-to-{target}-native-arm64-106'
+            block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
+            self.assertIn(f'require_linear_arm64_sync "$head" {target}', block)
+            self.assertIn(f'{tip} {branch}', block)
+
 
 if __name__=='__main__':unittest.main()
