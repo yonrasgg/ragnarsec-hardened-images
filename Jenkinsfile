@@ -257,6 +257,8 @@ GITLEAKS_CONFIG
       steps {
         sh '''
           set -euo pipefail
+          # Explicit checkout does not reliably export GIT_COMMIT to later steps.
+          export GIT_COMMIT="$(git rev-parse --verify HEAD)"
           export PATH="$CI_TOOLS:$PATH"
           export BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-amd64"
@@ -270,8 +272,6 @@ GITLEAKS_CONFIG
           if [ "$target" = "development" ]; then
             echo 'Development build: plan only; full image validation runs on staging.'
           else
-            # Explicit checkout does not reliably export GIT_COMMIT to later steps.
-            export GIT_COMMIT="$(git rev-parse --verify HEAD)"
             RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
               --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           fi
