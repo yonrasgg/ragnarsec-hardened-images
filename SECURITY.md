@@ -23,3 +23,25 @@ while it remains open; these are targets, not guaranteed response times. If
 accepted, the maintainer will coordinate a fix and disclosure timeline with
 the reporter. If declined, the maintainer will explain why privately. Please
 allow time for a coordinated fix before making details public.
+
+## Image Verification
+
+Digests published from `main` by the CI pipeline are signed with
+[cosign](https://github.com/sigstore/cosign) using a project-held private key.
+The corresponding public key is committed at [`cosign.pub`](cosign.pub) in the
+repository root, and signatures are recorded in the public
+[Sigstore Rekor](https://docs.sigstore.dev/logging/overview/) transparency log.
+
+Verify a published image index and its per-platform digests with cosign
+(v3.1.3 is the version pinned by this repository's CI):
+
+```sh
+cosign verify --key cosign.pub ghcr.io/yonrasgg/ragnarsec-<image>@sha256:<index-digest>
+cosign verify-attestation --type cyclonedx --key cosign.pub \
+  ghcr.io/yonrasgg/ragnarsec-<image>@sha256:<platform-digest>
+```
+
+Each published platform digest also carries a CycloneDX SBOM attestation.
+Tags are mutable references; always verify against the exact digest. A green
+verification proves signature and attestation integrity, not the absence of
+vulnerabilities.

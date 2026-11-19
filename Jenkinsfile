@@ -26,6 +26,7 @@ pipeline {
   agent { label 'ragnarsec-linux' }
 
   options {
+    skipDefaultCheckout()
     timeout(time: 60, unit: 'MINUTES')
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '30'))
@@ -79,6 +80,8 @@ pipeline {
   }
 
   environment {
+    DOCKER_HOST = "unix://${env.XDG_RUNTIME_DIR}/docker.sock"
+    DOCKER_CONTEXT = ''
     PYTHONDONTWRITEBYTECODE = '1'
     PLATFORMS = "${params.PLATFORMS}"
     CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"
@@ -89,10 +92,17 @@ pipeline {
   }
 
   stages {
+    stage('Checkout SCM') {
+      steps {
+        checkout scm
+      }
+    }
+
     stage('Provenance') {
       steps {
         sh '''
           set -euo pipefail
+          python3 tools/ci_docker_endpoint.py
           test "$(git rev-parse --is-shallow-repository)" = "false" || {
             echo 'STOP: complete history required; configure a non-shallow checkout.' >&2
             exit 2
@@ -106,7 +116,7 @@ pipeline {
               return 0
             fi
             tree="$(git rev-parse "${commit}^{tree}")"
-            if git log --format='%T' "origin/${branch}" | grep -qx "$tree"; then
+            if git log --format='%T' "origin/${branch}" | grep -x "$tree" >/dev/null; then
               return 0
             fi
             echo "STOP: ${message}" >&2
@@ -149,6 +159,13 @@ pipeline {
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
                   require_one_time_sync "$head" staging \
                     be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
+                elif [ "$source" = "sync/development-to-staging-node-exporter-policy-20261119" ]; then
+                  staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91
+                  require_one_time_sync "$head" staging "$staging_tip" development
+                  test "$(git rev-list --parents -n 1 "$head")" = "$head $staging_tip" || {
+                    echo 'STOP: staging sync must have exactly the pinned staging parent.' >&2
+                    exit 2
+                  }
                 else
                   echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                   exit 2
@@ -253,7 +270,7 @@ GITLEAKS_CONFIG
           if [ "$target" = "development" ]; then
             echo 'Development build: plan only; full image validation runs on staging.'
           else
-            python3 tools/image_ci.py validate --image "$IMAGE" \
+            RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
               --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           fi
         '''
@@ -295,7 +312,8 @@ GITLEAKS_CONFIG
   post {
     always {
       sh '''
-        if command -v docker >/dev/null 2>&1; then
+        if command -v docker >/dev/null 2>&1 &&
+           python3 tools/ci_docker_endpoint.py --config-only >/dev/null 2>&1; then
           docker logout ghcr.io >/dev/null 2>&1 || true
         fi
         # Remove every per-build artifact: credentials, pinned tools, receipts
