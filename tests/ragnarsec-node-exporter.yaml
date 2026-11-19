@@ -3,6 +3,8 @@ schemaVersion: 2.0.0
 metadataTest:
   user: ragnarsec
   workdir: /app
+  entrypoint: ["/sbin/tini", "--"]
+  cmd: ["node_exporter"]
 
 fileExistenceTests:
   - name: 'Node Exporter Binary'
