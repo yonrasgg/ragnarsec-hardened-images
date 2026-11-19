@@ -159,8 +159,8 @@ pipeline {
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
                   require_one_time_sync "$head" staging \
                     be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
-                elif [ "$source" = "sync/development-to-staging-release-guard-20261119" ]; then
-                  staging_tip=159609c8fcd6aeac35097bf1fe6fffd962347f10
+                elif [ "$source" = "sync/development-to-staging-node-exporter-entrypoint-20261119" ]; then
+                  staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91
                   require_one_time_sync "$head" staging "$staging_tip" development
                   test "$(git rev-list --parents -n 1 "$head")" = "$head $staging_tip" || {
                     echo 'STOP: staging sync must have exactly the pinned staging parent.' >&2
@@ -177,13 +177,6 @@ pipeline {
                 elif [ "$source" = "sync/staging-to-main-vex-20261103" ]; then
                   require_one_time_sync "$head" main \
                     faaf17460b6e828c02e455665015fb05828b1c87 staging
-                elif [ "$source" = "sync/staging-to-main-node-exporter-20261119" ]; then
-                  main_tip=895dff80d7604475373066451528bc2aaba83087
-                  require_one_time_sync "$head" main "$main_tip" staging
-                  test "$(git rev-list --parents -n 1 "$head")" = "$head $main_tip" || {
-                    echo 'STOP: main sync must have exactly the pinned main parent.' >&2
-                    exit 2
-                  }
                 else
                   echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                   exit 2
@@ -306,6 +299,7 @@ GITLEAKS_CONFIG
             set -euo pipefail
             export PATH="$CI_TOOLS:$PATH"
             export IMAGE_TAG="$(cat "$CI_ROOT/image-tag")"
+            python3 tools/release_signing_guard.py
             export PUBLICATION_ENABLED=true
             printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
             python3 tools/image_ci.py publish --image "$IMAGE" \
