@@ -159,7 +159,7 @@ pipeline {
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
                   require_one_time_sync "$head" staging \
                     be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
-                elif [ "$source" = "sync/development-to-staging-exact-20261119" ]; then
+                elif [ "$source" = "sync/development-to-staging-build-egress-20261119" ]; then
                   staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91
                   require_one_time_sync "$head" staging "$staging_tip" development
                   test "$(git rev-list --parents -n 1 "$head")" = "$head $staging_tip" || {
@@ -270,7 +270,7 @@ GITLEAKS_CONFIG
           if [ "$target" = "development" ]; then
             echo 'Development build: plan only; full image validation runs on staging.'
           else
-            python3 tools/image_ci.py validate --image "$IMAGE" \
+            RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
               --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           fi
         '''

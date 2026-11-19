@@ -8,6 +8,7 @@ supported. No production hosts, deployment, global Docker cleanup or caches.
 import argparse
 import datetime
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -108,10 +109,38 @@ def require_local_parent_builder():
 
 
 def _build_args(image, tag, platform):
-    return ('--build-arg', 'BASE_TAG=' + tag,
+    return (*build_proxy_args(), '--build-arg', 'BASE_TAG=' + tag,
             '--build-arg', 'BUILD_DATE=' + os.environ.get('BUILD_DATE', '1970-01-01T00:00:00Z'),
             '--build-arg', 'VCS_REF=' + (os.environ.get('GIT_COMMIT') or os.environ.get('GITHUB_SHA') or 'local'),
-             '-f', image['dockerfile'], image['context'])
+              '-f', image['dockerfile'], image['context'])
+
+
+def staging_egress_required():
+    return os.environ.get('RAGNARSEC_REQUIRE_STAGE_EGRESS') == '1'
+
+
+def build_proxy_args():
+    """Explicit proxy for RUN, separate from the daemon and Jenkins proxy."""
+    proxy = os.environ.get('RAGNARSEC_BUILD_PROXY', '')
+    if not proxy and not staging_egress_required():
+        return ()
+    endpoint = re.fullmatch(r'http://([0-9.]+):([0-9]{1,5})', proxy)
+    if not endpoint:
+        raise ValueError('build-proxy-requires-private-ipv4-endpoint')
+    address = ipaddress.IPv4Address(endpoint[1])
+    if not (address.is_private and not address.is_loopback and not address.is_link_local
+            and not address.is_unspecified and not address.is_reserved
+            and 1 <= int(endpoint[2]) <= 65535):
+        raise ValueError('build-proxy-requires-private-ipv4-endpoint')
+    settings = {'HTTP_PROXY': proxy, 'HTTPS_PROXY': proxy, 'NO_PROXY': ''}
+    return tuple(arg for key, value in settings.items() for name in (key, key.lower())
+                 for arg in ('--build-arg', f'{name}={value}'))
+
+
+def trivy_db_args():
+    if staging_egress_required():
+        return ('--db-repository', 'ghcr.io/aquasecurity/trivy-db:2')
+    return ()
 
 
 def require_base_min_inventory(sbom):
@@ -212,6 +241,8 @@ def _vex_snapshot(name, output):
 
 
 def validate(selected, tag, output):
+    build_proxy_args()
+    db_args = trivy_db_args()
     if not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,119}', tag):
         raise ValueError('invalid-image-tag')
     targets = platforms()
@@ -262,15 +293,15 @@ def validate(selected, tag, output):
                 raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,
                     '--image', ref, '--config', str(test))
-            scan = ['trivy', 'image', '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
+            scan = ['trivy', 'image', *db_args, '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
                     'misconfig,secret', '--ignorefile', '/dev/null']
             if vex_file:
                 scan += ['--vex', vex_file]
             command(*scan, ref)
-            command('trivy', 'image', '--scanners', 'license', '--format', 'table', '--exit-code', '0', ref)
+            command('trivy', 'image', *db_args, '--scanners', 'license', '--format', 'table', '--exit-code', '0', ref)
             sbom = output / (name + '.' + suffix + '.cdx.json')
-            command('trivy', 'image', '--format', 'cyclonedx', '--output', str(sbom), ref)
+            command('trivy', 'image', *db_args, '--format', 'cyclonedx', '--output', str(sbom), ref)
             if name == 'ragnarsec-base-min':
                 require_base_min_inventory(sbom)
             receipts.append({'ref': ref, 'name': name, 'platform': platform, 'id': image_id,
