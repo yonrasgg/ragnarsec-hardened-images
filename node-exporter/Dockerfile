@@ -17,10 +17,8 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 
 USER root
 
-# SECURITY: Upgrade system packages first
-# hadolint ignore=DL3018
-RUN apk upgrade --no-cache && \
-    apk add --no-cache prometheus-node-exporter
+# Patch the validated parent by updating its digest and package pins.
+RUN apk add --no-cache prometheus-node-exporter=1.11.1-r0
 
 USER ragnarsec
 WORKDIR /app

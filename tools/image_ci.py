@@ -143,6 +143,12 @@ def trivy_db_args():
     return ()
 
 
+def trivy_checks_args():
+    if staging_egress_required():
+        return ('--checks-bundle-repository', 'ghcr.io/aquasecurity/trivy-checks:0')
+    return ()
+
+
 def require_base_min_inventory(sbom):
     """A green scan is meaningless if the runtime's APK packages are invisible."""
     components = json.loads(sbom.read_text()).get('components') or []
@@ -293,7 +299,8 @@ def validate(selected, tag, output):
                 raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,
                     '--image', ref, '--config', str(test))
-            scan = ['trivy', 'image', *db_args, '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
+            scan = ['trivy', 'image', *db_args, *trivy_checks_args(),
+                    '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
                     'misconfig,secret', '--ignorefile', '/dev/null']
             if vex_file:
