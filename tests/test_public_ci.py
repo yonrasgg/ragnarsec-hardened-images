@@ -9,6 +9,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+# Publication subprocesses are mocked here; the key gate has separate tests.
+def setUpModule():
+    guard = patch("release_signing_guard.verify_signing_key")
+    guard.start()
+    unittest.addModuleCleanup(guard.stop)
+
+
 ROOT = Path(__file__).parents[1]
 def load(name):
     spec = importlib.util.spec_from_file_location(name, ROOT/'tools'/(name+'.py'))
@@ -657,7 +664,8 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('origin/${branch}',provenance)
         self.assertIn('merge-base --is-ancestor',provenance)
         self.assertIn('%T',provenance)
-        self.assertIn('grep -qx',provenance)
+        self.assertIn('grep -x "$tree" >/dev/null', provenance)
+        self.assertNotIn('grep -qx "$tree"', provenance)
         self.assertIn('HEAD^2',provenance)
     def test_one_time_syncs_require_exact_trees_and_frozen_bases(self):
         provenance=self.pipeline.split("stage('Provenance')",1)[1].split("stage('Contract')",1)[0]
