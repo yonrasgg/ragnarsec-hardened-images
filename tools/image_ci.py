@@ -355,6 +355,13 @@ def publish(selected, tag, output):
     command('cosign', 'public-key', '--key', key, '--outfile', str(public))
     if not public.is_file():
         raise ValueError('public-key-not-derived')
+    approved_public = ROOT / 'cosign.pub'
+    if not approved_public.is_file():
+        raise ValueError('approved-signing-key-missing')
+    approved_pem = approved_public.read_bytes().strip().replace(b'\r\n', b'\n')
+    derived_pem = public.read_bytes().strip().replace(b'\r\n', b'\n')
+    if not approved_pem or derived_pem != approved_pem:
+        raise ValueError('signing-key-does-not-match-approved-public-key')
 
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
@@ -412,10 +419,10 @@ def publish(selected, tag, output):
             command('cosign', 'sign', '--yes', '--key', key, refs[platform])
         command('cosign', 'sign', '--yes', '--key', key, index)
 
-        command('cosign', 'verify', '--key', str(public), index)
+        command('cosign', 'verify', '--key', str(approved_public), index)
         for platform in needed:
-            command('cosign', 'verify', '--key', str(public), refs[platform])
-            command('cosign', 'verify-attestation', '--type', 'cyclonedx', '--key', str(public), refs[platform])
+            command('cosign', 'verify', '--key', str(approved_public), refs[platform])
+            command('cosign', 'verify-attestation', '--type', 'cyclonedx', '--key', str(approved_public), refs[platform])
         print('Published validated index with signatures and attestations: ' + index)
 
 

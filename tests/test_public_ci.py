@@ -189,7 +189,7 @@ class ImagePlanning(unittest.TestCase):
 
                 def fake(*args, capture=False):
                     if args[:2] == ('cosign', 'public-key'):
-                        Path(args[args.index('--outfile') + 1]).write_text('pub')
+                        Path(args[args.index('--outfile') + 1]).write_bytes((ci.ROOT / 'cosign.pub').read_bytes())
                     if args[:3] == ('docker', 'image', 'inspect'):
                         return subprocess.CompletedProcess([], 0, stdout='expected')
                     return subprocess.CompletedProcess([], 0, stdout='')
@@ -201,6 +201,22 @@ class ImagePlanning(unittest.TestCase):
                         ci.publish('ragnarsec-base', tag, p)
                     self.assertFalse(any(call.args[:2] == ('docker', 'push') for call in cmd.call_args_list))
 
+    def test_unapproved_signing_key_stops_before_any_docker_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            key = p / 'cosign.key'
+            key.write_text('dummy key')
+
+            def fake(*args, capture=False):
+                self.assertEqual(args[:2], ('cosign', 'public-key'))
+                Path(args[args.index('--outfile') + 1]).write_text('different public key')
+
+            env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(key), 'PLATFORMS': 'linux/amd64'}
+            with patch.dict(ci.os.environ, env), patch.object(ci, 'command', side_effect=fake) as cmd:
+                with self.assertRaisesRegex(ValueError, 'signing-key-does-not-match-approved-public-key'):
+                    ci.publish('ragnarsec-base', 'test', p)
+                self.assertEqual(cmd.call_count, 1)
+
     def test_tampered_image_never_pushed(self):
         repository = ci.REGISTRY + 'ragnarsec-base'
         with tempfile.TemporaryDirectory() as tmp:
@@ -211,7 +227,7 @@ class ImagePlanning(unittest.TestCase):
 
             def fake(*args, capture=False):
                 if args[:2] == ('cosign', 'public-key'):
-                    Path(args[args.index('--outfile') + 1]).write_text('pub')
+                    Path(args[args.index('--outfile') + 1]).write_bytes((ci.ROOT / 'cosign.pub').read_bytes())
                     return subprocess.CompletedProcess([], 0, stdout='')
                 if args[:3] == ('docker', 'image', 'inspect'):
                     return subprocess.CompletedProcess([], 0, stdout='changed')
@@ -236,7 +252,7 @@ class ImagePlanning(unittest.TestCase):
 
             def fake(*args, capture=False):
                 if args[:2] == ('cosign', 'public-key'):
-                    Path(args[args.index('--outfile') + 1]).write_text('pub')
+                    Path(args[args.index('--outfile') + 1]).write_bytes((ci.ROOT / 'cosign.pub').read_bytes())
                     return subprocess.CompletedProcess([], 0, stdout='')
                 if args[:3] == ('docker', 'image', 'inspect'):
                     if args[3].startswith('--format={{json .RepoDigests}}'):
@@ -402,7 +418,7 @@ class VexPolicy(unittest.TestCase):
 
             def fake(*args, capture=False):
                 if args[:2] == ('cosign', 'public-key'):
-                    Path(args[args.index('--outfile') + 1]).write_text('pub')
+                    Path(args[args.index('--outfile') + 1]).write_bytes((ci.ROOT / 'cosign.pub').read_bytes())
                 if args[:3] == ('docker', 'image', 'inspect'):
                     return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
                 return subprocess.CompletedProcess([], 0, stdout='')
