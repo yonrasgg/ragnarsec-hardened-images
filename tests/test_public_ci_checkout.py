@@ -24,7 +24,7 @@ class CheckoutContract(unittest.TestCase):
 
     def test_20261119_staging_sync_pins_route_and_single_parent(self):
         pipeline = (Path(__file__).resolve().parents[1] / "Jenkinsfile").read_text()
-        branch = 'elif [ "$source" = "sync/development-to-staging-node-exporter-policy-20261119" ]; then'
+        branch = 'elif [ "$source" = "sync/development-to-staging-node-exporter-entrypoint-20261119" ]; then'
         self.assertEqual(pipeline.count(branch), 1)
         lane = pipeline.split(branch, 1)[1].split("\n                else", 1)[0]
         self.assertIn("staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91", lane)
@@ -55,6 +55,13 @@ class CheckoutContract(unittest.TestCase):
                       recipe.read_text())
         self.assertEqual(image_ci.policy.check_dockerfile(recipe), [])
         self.assertIn("ragnarsec-node-exporter", json.loads((ROOT / "policy.json").read_text())["enforce"])
+
+    def test_node_exporter_inherits_the_only_entrypoint(self):
+        base = (ROOT / "base" / "Dockerfile").read_text()
+        child = (ROOT / "node-exporter" / "Dockerfile").read_text()
+        self.assertEqual(re.findall(r"(?im)^\s*ENTRYPOINT\s+(.+)$", base), ['["/sbin/tini", "--"]'])
+        self.assertNotRegex(child, r"(?im)^\s*ENTRYPOINT\s+")
+        self.assertRegex(child, r'(?m)^CMD \["node_exporter"\]$')
 
     def test_enforced_egress_rejects_absent_or_unsafe_build_proxy(self):
         for proxy in ("", "http://127.0.0.1:13128", "http://8.8.8.8:13128",
