@@ -26,5 +26,5 @@ WORKDIR /app
 # Expose default port
 EXPOSE 9100
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# Inherit the validated parent's tini entrypoint.
 CMD ["node_exporter"]
