@@ -32,13 +32,13 @@ class ImagePlanning(unittest.TestCase):
                           side_effect=lambda path: path.name == 'qemu-aarch64'):
             ci.require_platforms_available(['linux/arm64'])
 
-    def test_arm64_ci_host_is_rejected_even_for_native_target(self):
-        for host in ('aarch64', 'arm64'):
-            with self.subTest(host=host), \
-                 patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': host})()), \
-                 patch.object(ci.Path, 'exists', side_effect=AssertionError('binfmt checked')):
-                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:' + host):
-                    ci.require_platforms_available(['linux/arm64'])
+    def test_aarch64_uses_native_platform_without_binfmt(self):
+        with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+             patch.object(ci.Path, 'exists', side_effect=AssertionError('binfmt checked')):
+            ci.require_platforms_available(['linux/arm64'])
+            for targets in (['linux/amd64'], ['linux/arm64', 'linux/amd64']):
+                with self.assertRaisesRegex(ValueError, 'native-arm64-runner-requires-linux-arm64'):
+                    ci.require_platforms_available(targets)
 
     def test_foreign_platform_without_handler_fails(self):
         with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
@@ -606,13 +606,24 @@ class DockerfilePolicy(unittest.TestCase):
             self.assertNotIn('root-final-user', policy.check_dockerfile(dockerfile))
 
 class ToolCustody(unittest.TestCase):
-    def test_installer_rejects_arm64_before_directory_or_download(self):
+    def test_native_arm64_uses_pinned_arm64_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / 'tools'
             with patch('sys.argv', ['install_ci_tools.py', str(destination)]), \
-                 patch('os.uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+                 patch.object(install.os, 'uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+                 patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong')) as download:
+                with self.assertRaisesRegex(ValueError, 'tool-checksum-mismatch'):
+                    install.main()
+                self.assertTrue(download.call_args.args[0].endswith('/container-structure-test-linux-arm64'))
+                self.assertEqual(list(destination.iterdir()), [])
+
+    def test_installer_rejects_unknown_arch_before_directory_or_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / 'tools'
+            with patch('sys.argv', ['install_ci_tools.py', str(destination)]), \
+                 patch('os.uname', return_value=type('Uname', (), {'machine': 'riscv64'})()), \
                  patch.object(install.urllib.request, 'urlopen', side_effect=AssertionError('download attempted')):
-                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:aarch64'):
+                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:riscv64'):
                     install.main()
             self.assertFalse(destination.exists())
 
@@ -697,10 +708,11 @@ class JenkinsBoundaries(unittest.TestCase):
         post=self.pipeline.split('post {',1)[1]
         self.assertIn('rm -rf "$CI_ROOT"',post)
 
-    def test_jenkins_rejects_non_amd64_host_before_tool_installation(self):
+    def test_jenkins_checks_selected_runner_before_tool_installation(self):
         tools = self.pipeline.split("stage('Tools')", 1)[1].split("stage('Secret scan')", 1)[0]
-        self.assertIn('test "$(uname -m)" = "x86_64"', tools)
-        self.assertLess(tools.index('test "$(uname -m)" = "x86_64"'),
-                        tools.index('install_ci_tools.py'))
+        guard = 'true:aarch64:linux/arm64|false:x86_64:*'
+        self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
+        self.assertIn("params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'", self.pipeline)
+
 
 if __name__=='__main__':unittest.main()

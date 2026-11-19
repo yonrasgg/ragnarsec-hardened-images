@@ -15,6 +15,8 @@
 // - multibranch pipeline with a non-shallow checkout;
 // - an x86_64 agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
 //   ARM64 targets require qemu-aarch64 binfmt on this AMD64 CI host;
+// - optional dedicated AArch64 agent labeled `ragnarsec-linux-arm64`, with
+//   the same rootless Docker and guarded egress contract; never the controller;
 // - a selected buildx builder using the `docker` driver so validated local
 //   parent tags are visible to dependent builds before publication;
 // - credentials id `ragnarsec-registry` (username/password) for publication;
@@ -23,7 +25,7 @@
 // - a required status check named after this job, configured in the ruleset.
 
 pipeline {
-  agent { label 'ragnarsec-linux' }
+  agent { label "${params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'}" }
 
   options {
     skipDefaultCheckout()
@@ -77,6 +79,11 @@ pipeline {
       defaultValue: '',
       description: 'Optional suffix appended to the generated image tag.'
     )
+    booleanParam(
+      name: 'NATIVE_ARM64',
+      defaultValue: false,
+      description: 'Use the dedicated ARM64 runner. Requires PLATFORMS=linux/arm64.'
+    )
   }
 
   environment {
@@ -84,6 +91,7 @@ pipeline {
     DOCKER_CONTEXT = ''
     PYTHONDONTWRITEBYTECODE = '1'
     PLATFORMS = "${params.PLATFORMS}"
+    CI_NATIVE_ARM64 = "${params.NATIVE_ARM64 == true ? 'true' : 'false'}"
     CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"
     CI_TOOLS = "${WORKSPACE_TMP}/ragnarsec-ci/tools"
     VALIDATION_OUTPUT = "${WORKSPACE_TMP}/ragnarsec-ci/image-validation"
@@ -219,10 +227,10 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
-          test "$(uname -m)" = "x86_64" || {
-            echo 'STOP: pinned CI tools require an x86_64 host; ARM64 targets need QEMU.' >&2
-            exit 2
-          }
+          case "$CI_NATIVE_ARM64:$(uname -m):$PLATFORMS" in
+            true:aarch64:linux/arm64|false:x86_64:*) ;;
+            *) echo 'STOP: runner architecture or native ARM64 target mismatch.' >&2; exit 2 ;;
+          esac
           : "${CI_ROOT:?}"
           # Jenkins may reuse the workspace; the installer requires a new
           # directory and validation receipts must never survive a build.
@@ -261,7 +269,9 @@ GITLEAKS_CONFIG
           export GIT_COMMIT="$(git rev-parse --verify HEAD)"
           export PATH="$CI_TOOLS:$PATH"
           export BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-amd64"
+          runner_arch=amd64
+          if [ "$CI_NATIVE_ARM64" = true ]; then runner_arch=arm64; fi
+          export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-${runner_arch}"
           if [ -n "${IMAGE_TAG_SUFFIX:-}" ]; then
             export IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"
           fi
