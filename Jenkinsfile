@@ -159,6 +159,13 @@ pipeline {
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
                   require_one_time_sync "$head" staging \
                     be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
+                elif [ "$source" = "sync/development-to-staging-exact-20261119" ]; then
+                  staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91
+                  require_one_time_sync "$head" staging "$staging_tip" development
+                  test "$(git rev-list --parents -n 1 "$head")" = "$head $staging_tip" || {
+                    echo 'STOP: staging sync must have exactly the pinned staging parent.' >&2
+                    exit 2
+                  }
                 else
                   echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                   exit 2
