@@ -344,6 +344,8 @@ def publish(selected, tag, output):
     """
     if os.environ.get('PUBLICATION_ENABLED') != 'true':
         raise ValueError('publication-not-enabled')
+    from release_signing_guard import verify_signing_key
+    verify_signing_key(os.environ.get('COSIGN_KEY'))
     key = os.environ.get('COSIGN_KEY')
     if not key or not Path(key).is_file():
         raise ValueError('signing-key-not-configured')

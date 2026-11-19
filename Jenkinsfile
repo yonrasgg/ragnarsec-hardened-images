@@ -299,6 +299,7 @@ GITLEAKS_CONFIG
             set -euo pipefail
             export PATH="$CI_TOOLS:$PATH"
             export IMAGE_TAG="$(cat "$CI_ROOT/image-tag")"
+            python3 tools/release_signing_guard.py
             export PUBLICATION_ENABLED=true
             printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
             python3 tools/image_ci.py publish --image "$IMAGE" \
