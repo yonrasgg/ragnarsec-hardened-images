@@ -28,7 +28,11 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/openresty
+
+# Upstream retains the OpenResty build tree, including test private keys.
+# Runtime binaries and modules are installed outside this temporary source tree.
+# Remove the source tree from the final filesystem; keep secret scanning enabled.
 
 # Upstream initializes as root. PUID/PGID default to 0, so nginx and the backend
 # keep root privileges unless nonzero IDs are configured and validated.

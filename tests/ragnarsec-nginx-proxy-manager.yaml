@@ -2,6 +2,9 @@ schemaVersion: 2.0.0
 metadataTest:
   exposedPorts: ["80", "81", "443"]
 fileExistenceTests:
+  - name: 'OpenResty build sources and test keys removed'
+    path: '/tmp/openresty'
+    shouldExist: false
   - name: 'Application directory'
     path: '/app'
     shouldExist: true

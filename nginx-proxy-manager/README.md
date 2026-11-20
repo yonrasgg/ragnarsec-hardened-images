@@ -19,6 +19,10 @@ re-review the digest for every release.
 ## Hardening declared
 
 - Debian packages inherited from upstream are upgraded during build, then caches removed.
+- The inherited `/tmp/openresty` build tree is removed from the final filesystem,
+  including its test private keys and documentation examples. Structure tests
+  require its absence and check that nginx and Node still execute. Trivy secret
+  scanning remains enabled. This cleanup does not erase the upstream image layers.
 - No `USER` override: upstream initialization expects to start as root.
 - **PUID/PGID default to `0`**, so nginx and the Node backend run as root unless
   nonzero IDs are configured. Non-root operation requires explicit `PUID`/`PGID`,
