@@ -311,9 +311,15 @@ GITLEAKS_CONFIG
             # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
             validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
             TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
-              --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
+              --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT" 2>&1 | tee "$CI_ROOT/validate.log"
+            test "${PIPESTATUS[0]}" -eq 0
+            # Reviewer summary (markdown + json) from the receipts; archived, never decides.
+            mkdir -p "$WORKSPACE/ci-summary"
+            python3 tools/validation_summary.py --output "$VALIDATION_OUTPUT" --log "$CI_ROOT/validate.log" \
+              --commit "$GIT_COMMIT" --target "$target" --run-url "${BUILD_URL:-}" --write "$WORKSPACE/ci-summary"
           fi
         '''
+        archiveArtifacts artifacts: 'ci-summary/summary.md, ci-summary/summary.json', allowEmptyArchive: true
       }
     }
 
@@ -361,6 +367,13 @@ GITLEAKS_CONFIG
         # and the derived public key. The next build starts from an empty root.
         if [ -n "${CI_ROOT:-}" ]; then
           rm -rf "$CI_ROOT"
+        fi
+        # The reviewer summary embeds BUILD_URL. If Jenkins reuses this
+        # workspace, a leftover report is scanned by publication_guard in the
+        # next build before validation can regenerate it. It was archived
+        # already; remove it on every outcome, including failures.
+        if [ -n "${WORKSPACE:-}" ] && [ -d "$WORKSPACE/ci-summary" ]; then
+          rm -rf "$WORKSPACE/ci-summary"
         fi
       '''
     }
