@@ -171,7 +171,7 @@ pipeline {
               staging)
                 if [ "$source" = "development" ]; then
                   require_traceable development "$head" 'staging pull request is not traceable to development.'
-                elif [ "$source" = "sync/development-to-staging-native-arm64-contract-fix" ]; then
+                elif [ "$source" = "sync/development-to-staging-native-arm64-npm-structure" ]; then
                   require_linear_arm64_sync "$head" staging \
                     e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
