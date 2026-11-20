@@ -50,6 +50,16 @@ class CheckoutContract(unittest.TestCase):
             self.assertEqual(image_ci.trivy_checks_args(),
                              ("--checks-bundle-repository", "ghcr.io/aquasecurity/trivy-checks:0"))
 
+    def test_image_validation_uses_private_workspace_temp_directory(self):
+        pipeline = (ROOT / "Jenkinsfile").read_text()
+        self.assertIn('CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"', pipeline)
+        self.assertRegex(
+            pipeline,
+            r'validation_tmp="\$\(mktemp -d "\$CI_ROOT/validation-tmp\.XXXXXXXX"\)"\s*'
+            r'TMPDIR="\$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 '
+            r'python3 tools/image_ci\.py validate',
+        )
+
     def test_node_exporter_pins_its_package_and_enforces_recipe_policy(self):
         recipe = ROOT / "node-exporter" / "Dockerfile"
         self.assertIn("apk add --no-cache prometheus-node-exporter=1.11.1-r0",

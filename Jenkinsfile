@@ -171,7 +171,7 @@ pipeline {
               staging)
                 if [ "$source" = "development" ]; then
                   require_traceable development "$head" 'staging pull request is not traceable to development.'
-                elif [ "$source" = "sync/development-to-staging-native-arm64-trivy-java-db" ]; then
+                elif [ "$source" = "sync/development-to-staging-native-arm64-trivy-workspace-tmp" ]; then
                   require_linear_arm64_sync "$head" staging \
                     e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
@@ -295,7 +295,9 @@ GITLEAKS_CONFIG
           if [ "$target" = "development" ]; then
             echo 'Development build: plan only; full image validation runs on staging.'
           else
-            RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
+            # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
+            validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
+            TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
               --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           fi
         '''
