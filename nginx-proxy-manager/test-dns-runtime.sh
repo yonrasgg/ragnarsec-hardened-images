@@ -49,7 +49,7 @@ NGINX
 /usr/sbin/nginx -s reload
 for _ in $(seq 1 16); do
     body=$(wget -T 2 -qO- --header 'Host: npm-dns-smoke.invalid' \
-        http://127.0.0.1/resolver-smoke || :)
+        http://127.0.0.1/resolver-smoke 2>/dev/null || :)
     if [ "$body" = 'dns-smoke:/resolver-smoke' ]; then exit 0; fi
     sleep 0.25
 done

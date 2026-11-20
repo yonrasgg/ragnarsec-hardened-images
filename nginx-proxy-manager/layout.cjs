@@ -54,7 +54,8 @@ edit("etc/nginx/nginx.conf", (s) => {
     text = replace(text, /(^\s*client_body_temp_path .*;)/m,
         "$1\n\tproxy_temp_path /tmp/npm/proxy;\n\tfastcgi_temp_path /tmp/npm/fastcgi;\n\tuwsgi_temp_path /tmp/npm/uwsgi;\n\tscgi_temp_path /tmp/npm/scgi;");
     text = replace(text, /(^\s*include \/etc\/nginx\/conf\.d\/\*\.conf;)/m, "$1\n\tinclude /tmp/npm/production.conf;");
-    return replace(text, /^\s*include \/etc\/nginx\/conf\.d\/include\/resolvers\[\.\]conf;\n/m, "\n");
+    return replace(text, /^([ \t]*)include \/etc\/nginx\/conf\.d\/include\/resolvers\[\.\]conf;$/m,
+        "$1include /tmp/npm/resolvers.conf;");
 });
 edit("etc/nginx/conf.d/production.conf.template", (s) => replace(s, /listen \{\{NPM_ADMIN_PORT\}\}/, "listen 127.0.0.1:{{NPM_ADMIN_PORT}}")
     .replace(/^[ \t]*listen \[::\]:\{\{NPM_ADMIN_PORT\}\}.*\n/m, ""));
