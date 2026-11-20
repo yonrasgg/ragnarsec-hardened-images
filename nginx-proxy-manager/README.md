@@ -20,9 +20,13 @@ re-review the digest for every release.
 
 - Debian packages inherited from upstream are upgraded during build, then caches removed.
 - The inherited `/tmp/openresty` build tree is removed from the final filesystem,
-  including its test private keys and documentation examples. Structure tests
-  require its absence and check that nginx and Node still execute. Trivy secret
-  scanning remains enabled. This cleanup does not erase the upstream image layers.
+  including its test private keys. Installed OpenResty POD documentation is removed,
+  and the illustrative certificate key in the upload-response schema is replaced
+  with a placeholder while preserving the schema. The sanitized filesystem is
+  copied into a fresh final stage so deleted fixtures are absent from distributed
+  layers. The pinned upstream environment, s6 entrypoint, working directory, data
+  volume and ports are restored explicitly. Revalidate this contract on upgrades.
+  Trivy secret scanning remains enabled without exclusions.
 - No `USER` override: upstream initialization expects to start as root.
 - **PUID/PGID default to `0`**, so nginx and the Node backend run as root unless
   nonzero IDs are configured. Non-root operation requires explicit `PUID`/`PGID`,

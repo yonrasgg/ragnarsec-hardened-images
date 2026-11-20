@@ -1,9 +1,20 @@
 schemaVersion: 2.0.0
 metadataTest:
   exposedPorts: ["80", "81", "443"]
+  entrypoint: ["/init"]
+  workdir: '/app'
+  volumes: ['/data']
+  envVars:
+    - key: NODE_ENV
+      value: production
+    - key: S6_BEHAVIOUR_IF_STAGE2_FAILS
+      value: '1'
 fileExistenceTests:
   - name: 'OpenResty build sources and test keys removed'
     path: '/tmp/openresty'
+    shouldExist: false
+  - name: 'OpenResty documentation key examples removed'
+    path: '/etc/nginx/pod'
     shouldExist: false
   - name: 'Application directory'
     path: '/app'
@@ -15,6 +26,12 @@ fileExistenceTests:
     path: '/usr/sbin/nginx'
     shouldExist: true
 commandTests:
+  - name: 'Certificate upload response schema preserved without example key'
+    command: 'node'
+    args:
+      - '-e'
+      - 'const s=require("/app/schema/paths/nginx/certificates/certID/upload/post.json"); const c=s.responses["200"].content["application/json"]; if (!c.schema || c.examples.default.value.certificate_key !== "REDACTED_PRIVATE_KEY_EXAMPLE") process.exit(1);'
+    exitCode: 0
   # The upstream image leaves Config.User empty; Docker then starts as UID 0.
   # Test the effective default required by s6, not a metadata spelling.
   - name: 'Upstream initialization default UID'
