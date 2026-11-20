@@ -2,62 +2,69 @@
 
 ## Purpose
 
-Reverse proxy with a web administration UI used to publish internal HTTP services
-over TLS. This document describes an image interface, not a deployed system.
+Reverse proxy built from official Nginx Proxy Manager 2.17.1 source, with its
+web UI, OpenResty/GeoIP2, the Node backend and Certbot. This document describes
+an image interface, not a deployed system.
 
 ## Build inputs
 
-- Declared `FROM`: `docker.io/jc21/nginx-proxy-manager:2.16.0@sha256:4393e642e233e5efd5adeb7f10918d4aaea71c9ed875b94190273fc8e87f9594`
-- Upstream version observed in `/app/package.json`: **2.16.0**; `latest` resolves to the same digest at review time.
-- Upstream project: Nginx Proxy Manager (MIT). The wrapper is GPL-3.0.
-- The multi-arch index includes `linux/arm64`; the consumer fleet is mixed
-  (`aarch64` and `x86_64`), so both platforms must be validated before promotion.
+The recipe builds from the pinned Alpine and Node indexes, not the upstream
+Debian runtime or prebuilt local components. `fetch-sources.sh` pins the
+NPM, OpenResty, GeoIP2, Yarn and vendor backport bytes. The two Yarn lockfiles
+constrain dependencies; `backend-lock.patch` updates the ProxyAgent chain.
+`certbot-requirements.txt` pins all 17 Python packages with wheel hashes for
+Linux AMD64 and ARM64 on musl. Validate both architectures independently.
 
-A digest pins the reviewed bytes, not the upstream trustworthiness. Re-resolve and
-re-review the digest for every release.
+The pinned OpenResty archive and detached signature match the staged public
+key. Its full fingerprint still needs independent confirmation from an
+authoritative source before promotion; the vendor download page lists the
+short key ID. A valid signature with a pinned key is not that confirmation.
 
 ## Hardening declared
 
-- Debian packages inherited from upstream are upgraded during build, then caches removed.
-- No `USER` override: upstream initialization expects to start as root.
-- **PUID/PGID default to `0`**, so nginx and the Node backend run as root unless
-  nonzero IDs are configured. Non-root operation requires explicit `PUID`/`PGID`,
-  a validation that the effective uid is not 0, and accepting that binding 80/443
-  still needs the root master or `NET_BIND_SERVICE`.
-- Runtime hardening belongs to the consumer: `no-new-privileges`, `cap_drop` of
-  everything except the caps the entrypoint needs, no Docker socket and no
-  privileged mode.
-- No credentials, certificates, environment files or inventories are embedded.
-- Observed on a local amd64 build (image id `a12936ca0cb24b4af727ec0cf4e43945cdc0a89c39c60287864203495babdfbd`):
-  effective user `root`, `nginx` is OpenResty at `/usr/sbin/nginx`, Node v22,
-  `/app` and `/data` exist, and no Docker socket is present.
-
-These are static observations, not proof of runtime isolation or vulnerability
-remediation. Validate effective user, capabilities and writable paths after building.
+- The final image starts as UID/GID `1000:1000`. Tini supervises a startup
+  script that generates a per-start peer secret in `/tmp` for the admin proxy.
+- The final layers do not contain the OpenResty build tree or upstream test
+  CA. Only the PEM value in the certificate upload API example is removed;
+  the live schema is unchanged. Trivy secret scanning stays enabled.
+- Runtime must not use a socket mount, privileged mode or root. Use a
+  read-only root filesystem, no added capabilities, and writable mounts for
+  `/data`, `/etc/letsencrypt` (both pre-owned by UID/GID 1000), and `/tmp` as a
+  private tmpfs. For ports below 1024, verify the container network namespace
+  supports non-root binds without additional capabilities.
+- The admin proxy binds to container loopback port 8181; the Node API is also
+  loopback-only. A host `ports` mapping is not an admin access design. No
+  external listener, resolver change, or release rollout is authorized here.
+- This candidate targets IPv4 and ACME HTTP-01. IPv6, automatic external
+  IP-range downloads, and writable runtime installation of DNS plugins are
+  outside this contract. Existing DNS-01 state must not be migrated onto it.
 
 ## Patching
 
-Rebuild from a newly reviewed upstream digest to inherit upstream fixes, then
-re-run the upgrade step. An existing image is not patched because a Dockerfile
-changed; only a new digest carries the evidence.
+Refresh a supported source or package version, verify the updated source
+provenance, then rebuild and rescan both architectures. Do not substitute an
+unreviewed runtime or use scanner exclusions for deleted fixtures.
 
 ## Controls and evidence
 
-Required before promotion: container-structure test, vulnerability scan by digest,
-SBOM per platform, signed index and recorded upstream/output digests.
+Run the complete image Trivy gate and structure/functional tests on AMD64
+and native ARM64 using the exact PR commit. CI adds exact image file hashes
+and source metadata for the compiled/copied binaries in `runtime-components.json`
+to Trivy's package SBOM; this does not change what the scanner covers.
+Before promoting, demonstrate persisted state migration and restore and
+scheduled renewal. Publish only by separate approval with
+verified digest, signature, and SBOM; applying to any host is separate.
 
-No built-image pass is claimed in this document. Definitions are not proof of a
-passing build, and catalog inclusion does not identify a deployed service.
+No built-image pass is claimed by this recipe or its documentation.
 
 ## Using the image
 
-- Persist `/data` (configuration, database, certificates) and `/etc/letsencrypt`.
-- Publish 80/81/443 only on an internal management address; never on a public interface.
-- The admin UI (81) must not be exposed beyond the administrative network.
-- TLS material for consumers is issued by the internal CA; it is not baked into the image.
-- Pin the index digest or the platform digest; tags are mutable.
+In an isolated test, provide disposable state for `/data` and
+`/etc/letsencrypt`, and run the UI/API smoke through container loopback. Do not
+reuse the upstream Compose unchanged or connect production volumes during
+qualification. Pin the verified platform digest after a release, not a tag.
 
 ## License
 
-The wrapper (Dockerfile, tests, documentation) is GPL-3.0. Nginx Proxy Manager and
-its bundled OpenResty/Node components keep their own upstream licenses.
+The wrapper (Dockerfile, tests, documentation) is GPL-3.0. Nginx Proxy Manager
+and its bundled components retain their upstream licenses.

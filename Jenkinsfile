@@ -181,6 +181,9 @@ pipeline {
                 elif [ "$source" = "sync/development-to-staging-native-nginx-budget" ]; then
                   require_linear_arm64_sync "$head" staging \
                     e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
+                elif [ "$source" = "sync/development-to-staging-native-npm-124" ]; then
+                  require_linear_arm64_sync "$head" staging \
+                    edc2b7eee148551f122a89c59298008f69eaf70d development
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
                   require_one_time_sync "$head" staging \
                     be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
@@ -202,6 +205,9 @@ pipeline {
                 elif [ "$source" = "sync/staging-to-main-native-arm64-106" ]; then
                   require_linear_arm64_sync "$head" main \
                     32ba41c1ec403776cb4a8d8df3d184205f6020d0 staging
+                elif [ "$source" = "sync/staging-to-main-native-npm-124" ]; then
+                  require_linear_arm64_sync "$head" main \
+                    86db549ecd9853853e8821844dccc9dc8197e8c5 staging
                 elif [ "$source" = "sync/staging-to-main-vex-20261103" ]; then
                   require_one_time_sync "$head" main \
                     faaf17460b6e828c02e455665015fb05828b1c87 staging

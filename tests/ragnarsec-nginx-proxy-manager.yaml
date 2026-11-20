@@ -1,33 +1,52 @@
 schemaVersion: 2.0.0
 metadataTest:
-  exposedPorts: ["80", "81", "443"]
+  exposedPorts: ["80", "8181", "443"]
+  entrypoint: ["/sbin/tini", "--", "/usr/local/bin/npm-start"]
+  workdir: '/app'
+  user: '1000:1000'
+  envVars:
+    - key: NODE_ENV
+      value: production
+    - key: NPM_BUILD_VERSION
+      value: 2.17.1
 fileExistenceTests:
-  - name: 'Application directory'
-    path: '/app'
+  - name: 'No OpenResty builder fixtures'
+    path: '/source/openresty'
+    shouldExist: false
+  - name: 'No upstream test CA'
+    path: '/etc/ssl/certs/NginxProxyManager.crt'
+    shouldExist: false
+  - name: 'UI built in the image recipe'
+    path: '/app/frontend/index.html'
     shouldExist: true
-  - name: 'Data directory'
-    path: '/data'
+  - name: 'GeoIP2 dynamic module'
+    path: '/usr/lib/nginx/modules/ngx_http_geoip2_module.so'
     shouldExist: true
-  - name: 'Nginx binary (OpenResty bundle)'
-    path: '/usr/sbin/nginx'
+  - name: 'Managed ACME state'
+    path: '/etc/letsencrypt'
     shouldExist: true
 commandTests:
-  # The upstream image leaves Config.User empty; Docker then starts as UID 0.
-  # Test the effective default required by s6, not a metadata spelling.
-  - name: 'Upstream initialization default UID'
+  - name: 'Certificate schema preserved without the response PEM example'
+    command: 'node'
+    args:
+      - '-e'
+      - 'const s=require("/app/schema/paths/nginx/certificates/certID/upload/post.json"); const c=s.responses["200"].content["application/json"]; if (c.schema.properties.certificate_key.type !== "string" || "certificate_key" in c.examples.default.value) process.exit(1);'
+    exitCode: 0
+  - name: 'UID 1000 is effective'
     command: 'id'
     args: ['-u']
-    expectedOutput: ['^0[[:space:]]*$']
+    expectedOutput: ['^1000[[:space:]]*$']
     exitCode: 0
-  - name: 'Nginx version'
-    command: 'sh'
-    args: ['-c', 'nginx -v']
+  - name: 'OpenResty version'
+    command: 'nginx'
+    args: ['-v']
+    expectedError: ['openresty/1\.31\.8\.1']
     exitCode: 0
-  - name: 'Node runtime'
-    command: 'sh'
-    args: ['-c', 'node --version']
+  - name: 'Node version and shipped native dependencies'
+    command: 'node'
+    args: ['-e', 'const a=require("node:assert/strict");a.equal(process.version,"v26.13.1");const DB=require("better-sqlite3");const db=new DB(":memory:");a.equal(db.prepare("select 1 as ok").get().ok,1);db.close();a(require("bcrypt").hashSync("synthetic",4));']
     exitCode: 0
-  - name: 'No docker socket baked in'
+  - name: 'No Docker socket, compiler, or runtime package installer'
     command: 'sh'
-    args: ['-c', 'test ! -S /var/run/docker.sock']
+    args: ['-ec', 'test ! -S /var/run/docker.sock; ! command -v g++; ! command -v pip; ! command -v npm']
     exitCode: 0

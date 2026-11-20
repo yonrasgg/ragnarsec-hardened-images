@@ -27,6 +27,37 @@ def load(name):
 ci, install = load('image_ci'), load('install_ci_tools')
 policy = load('image_policy')
 
+class NpmRuntimeSbom(unittest.TestCase):
+    def _verify(self, valid):
+        snapshot = {'metadata': {'component': {'bom-ref': 'image'}},
+                    'components': [], 'dependencies': [{'ref': 'image', 'dependsOn': []}]}
+        source = json.loads((ROOT / 'nginx-proxy-manager/runtime-components.json').read_text())
+        paths = [component['path'] for component in source]
+        digest = 'a' * 64
+        output = ''.join(f'{digest}  {p}\n' for p in (paths if valid else paths[:-1]))
+        with tempfile.TemporaryDirectory() as tmp:
+            sbom = Path(tmp) / 'sbom.cdx.json'
+            sbom.write_text(json.dumps(snapshot))
+            with patch.object(ci, 'command', return_value=SimpleNamespace(stdout=output)):
+                if not valid:
+                    with self.assertRaisesRegex(ValueError, 'incomplete-npm-component-hashes'):
+                        ci.add_npm_runtime_components('sha256:' + digest, sbom)
+                    self.assertEqual(json.loads(sbom.read_text()), snapshot)
+                    return
+                ci.add_npm_runtime_components('sha256:' + digest, sbom)
+            document = json.loads(sbom.read_text())
+            self.assertEqual(len(document['components']), 4)
+            for component in document['components']:
+                self.assertIn(component['bom-ref'], document['dependencies'][0]['dependsOn'])
+                self.assertEqual(component['hashes'], [{'alg': 'SHA-256', 'content': digest}])
+
+    def test_npm_declared_binaries_are_linked_to_exact_image_sbom(self):
+        self._verify(valid=True)
+
+    def test_npm_missing_binary_fails_without_writing_partial_sbom(self):
+        self._verify(valid=False)
+
+
 class ImageSizeBudget(unittest.TestCase):
     def archive(self, path, layer, *, compressed, diff_id=None, arch='arm64'):
         digest = diff_id or 'sha256:' + hashlib.sha256(layer).hexdigest()
@@ -64,6 +95,7 @@ class ImageSizeBudget(unittest.TestCase):
                     self.archive(path, b'layer', compressed=True, **options)
                     with path.open('rb') as f, self.assertRaisesRegex(ValueError, error):
                         ci.archive_layer_bytes(f, 'linux/arm64')
+
 
 class ImagePlanning(unittest.TestCase):
     def test_foreign_platform_uses_qemu_registration_name(self):
@@ -784,7 +816,9 @@ class JenkinsBoundaries(unittest.TestCase):
             ('sync/development-to-staging-native-arm64-trivy-workspace-tmp', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/development-to-staging-native-nginx-118', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/development-to-staging-native-nginx-budget', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-npm-124', 'staging', 'edc2b7eee148551f122a89c59298008f69eaf70d', 'development'),
             ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
+            ('sync/staging-to-main-native-npm-124', 'main', '86db549ecd9853853e8821844dccc9dc8197e8c5', 'staging'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
             self.assertIn(f'require_linear_arm64_sync "$head" {target}', block)

@@ -1,0 +1,25 @@
+# Certbot HTTP-01 runtime closure from the passing AMD64 image.
+# Only allow universal or CPython 3.14-compatible musllinux wheels for AMD64/ARM64.
+acme==5.10.0 --hash=sha256:406c2ee832ad7903cba9d300fb53c5f2a66b4fe0793ee0eb8b1a19760db3f71a
+certbot==5.10.0 --hash=sha256:a49bb7773b343e32871964983adb95140b1ef771566c5f090f4b7e3f45900f65
+certifi==2026.10.23 --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
+cffi==2.1.1 \
+    --hash=sha256:5c58fe613dc5e5336357eff555824a314d8e43282600435c8d1cb6a7a2fedd13 \
+    --hash=sha256:64faea20f4e2613363a1a9b9c7dd73058f3ecd00133a511e72ad7c511658f527
+charset-normalizer==3.5.2 \
+    --hash=sha256:ddc7dacc8ece3a182e7f15cb862d1fd616b46d076cb1ae9dd232b2c38b655874 \
+    --hash=sha256:eff0ac9dbe711a4aee69bf04a83896aa9b85f19641264053a9f6d48573abb7dd
+ConfigArgParse==1.10.2 --hash=sha256:926e28ca8262f066dfeb6585e227a78f01bd3d7f3fb63fad1c8045c5da1401ac
+configobj==5.0.9 --hash=sha256:1ba10c5b6ee16229c79a05047aeda2b55eb4e80d7c7d8ecf17ec1ca600c79882
+cryptography==50.0.2 \
+    --hash=sha256:85d0d9a31b9098e98534226d5686b47264b95e62ce459dc2e62fdfc809f9fe93 \
+    --hash=sha256:25784ce8b9621c90c643efb9e1e2162ab3b0224cae446ad5e70e7fcb1ce18b51
+distro==1.9.0 --hash=sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2
+idna==3.20 --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+josepy==2.3.0 --hash=sha256:63a17ed5df81b360518d49c3b99f1e86897b318a41ae13333a145e400b5f0e57
+parsedatetime==2.6 --hash=sha256:cb96edd7016872f58479e35879294258c71437195760746faffedb692aef000b
+pycparser==3.12 --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e
+pyOpenSSL==26.4.0 --hash=sha256:f0eb0cb2d581d3ad2b9c489468485e7f2ab6727d08401bcf9d824c3caddf3c1c
+pyRFC3339==2.1.1 --hash=sha256:4973172cb8b29c14caca7f76e6a52890d9e59ec2722dd5eb29b7fdd9fda2232f
+requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+urllib3==2.8.0 --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
