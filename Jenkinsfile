@@ -90,6 +90,7 @@ pipeline {
     DOCKER_HOST = "unix://${env.XDG_RUNTIME_DIR}/docker.sock"
     DOCKER_CONTEXT = ''
     PYTHONDONTWRITEBYTECODE = '1'
+    IMAGE = "${params.IMAGE ?: ''}"
     PLATFORMS = "${params.PLATFORMS}"
     CI_NATIVE_ARM64 = "${params.NATIVE_ARM64 == true ? 'true' : 'false'}"
     CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"
@@ -172,6 +173,9 @@ pipeline {
                 if [ "$source" = "development" ]; then
                   require_traceable development "$head" 'staging pull request is not traceable to development.'
                 elif [ "$source" = "sync/development-to-staging-native-arm64-trivy-workspace-tmp" ]; then
+                  require_linear_arm64_sync "$head" staging \
+                    e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
+                elif [ "$source" = "sync/development-to-staging-native-nginx-118" ]; then
                   require_linear_arm64_sync "$head" staging \
                     e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
