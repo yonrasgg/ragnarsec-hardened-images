@@ -368,6 +368,13 @@ GITLEAKS_CONFIG
         if [ -n "${CI_ROOT:-}" ]; then
           rm -rf "$CI_ROOT"
         fi
+        # The reviewer summary embeds BUILD_URL. If Jenkins reuses this
+        # workspace, a leftover report is scanned by publication_guard in the
+        # next build before validation can regenerate it. It was archived
+        # already; remove it on every outcome, including failures.
+        if [ -n "${WORKSPACE:-}" ] && [ -d "$WORKSPACE/ci-summary" ]; then
+          rm -rf "$WORKSPACE/ci-summary"
+        fi
       '''
     }
     success {
