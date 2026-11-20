@@ -143,7 +143,8 @@ def build_proxy_args():
 
 def trivy_db_args():
     if staging_egress_required():
-        return ('--db-repository', 'ghcr.io/aquasecurity/trivy-db:2')
+        return ('--db-repository', 'ghcr.io/aquasecurity/trivy-db:2',
+                '--java-db-repository', 'ghcr.io/aquasecurity/trivy-java-db:1')
     return ()
 
 

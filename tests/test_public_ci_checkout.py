@@ -45,7 +45,8 @@ class CheckoutContract(unittest.TestCase):
                           "https_proxy=http://198.18.87.1:13128", "NO_PROXY=", "no_proxy="):
                 self.assertIn(value, args)
             self.assertEqual(image_ci.trivy_db_args(),
-                             ("--db-repository", "ghcr.io/aquasecurity/trivy-db:2"))
+                             ("--db-repository", "ghcr.io/aquasecurity/trivy-db:2",
+                              "--java-db-repository", "ghcr.io/aquasecurity/trivy-java-db:1"))
             self.assertEqual(image_ci.trivy_checks_args(),
                              ("--checks-bundle-repository", "ghcr.io/aquasecurity/trivy-checks:0"))
 
