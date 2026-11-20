@@ -54,12 +54,13 @@ const Database = require("better-sqlite3");
 const open = (path) => new Database(path, {readonly:true});
 const before = open("/seed.sqlite");
 const after = open("/data/database.sqlite");
-const history = (db) => db.prepare("select name from knex_migrations order by id").all().map(x=>x.name);
+// migrateUp reads currentVersion() from Knex's default table but runs against "migrations".
+const history = (db) => db.prepare("select name from migrations order by id").all().map(x=>x.name);
 assert(after.pragma("integrity_check", {simple:true}) === "ok");
 assert.equal(require("/tmp/health.json").status, "OK");
 assert.equal(after.prepare("select value from setting where id=?").pluck().get("synthetic-upgrade"), "expected");
 assert.deepEqual(history(after).slice(0, history(before).length), history(before));
-assert(history(after).length > history(before).length);
+assert(history(after).slice(history(before).length).includes("20260906220000_user_permission_meta.js"));
 console.log(JSON.stringify({case:"synthetic-upgrade",old_migrations:history(before).length,new_migrations:history(after).length,setting_preserved:true,integrity:"ok"}));
 before.close();
 after.close();
@@ -75,7 +76,7 @@ fs.copyFileSync("/seed.sqlite", "/data/database.sqlite");
 const db=new Database("/data/database.sqlite", {readonly:true});
 assert.equal(db.pragma("integrity_check", {simple:true}),"ok");
 assert.equal(db.prepare("select value from setting where id=?").pluck().get("synthetic-upgrade"),"expected");
-assert.equal(db.prepare("select count(*) from knex_migrations where name like '%user_permission_meta%'").pluck().get(),0);
+assert.equal(db.prepare("select count(*) from migrations where name like '%user_permission_meta%'").pluck().get(),0);
 console.log("NPM_2160_SQLITE_PREIMAGE_RESTORE_OK");
 db.close();
 JS
