@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Bounded multi-arch image validation.
 
-Runner requirements: Linux x86_64 with buildx and binfmt/qemu for ARM64 target
-images. The pinned CI tools are AMD64-only; native ARM64 hosts are not yet
-supported. No production hosts, deployment, global Docker cleanup or caches.
+Runner requirements: Linux with buildx. The dedicated native AArch64 runner
+is limited to linux/arm64; x86_64 still requires binfmt for ARM64 targets.
+No production hosts, deployment, global Docker cleanup or caches.
 """
 import argparse
 import datetime
@@ -89,6 +89,10 @@ def command(*args, capture=False):
 
 def require_platforms_available(targets):
     host = os.uname().machine
+    if host == 'aarch64':
+        if tuple(targets) != ('linux/arm64',):
+            raise ValueError('native-arm64-runner-requires-linux-arm64')
+        return
     if host != 'x86_64':
         raise ValueError('unsupported-ci-host-arch:' + host)
     for platform in targets:
@@ -139,7 +143,8 @@ def build_proxy_args():
 
 def trivy_db_args():
     if staging_egress_required():
-        return ('--db-repository', 'ghcr.io/aquasecurity/trivy-db:2')
+        return ('--db-repository', 'ghcr.io/aquasecurity/trivy-db:2',
+                '--java-db-repository', 'ghcr.io/aquasecurity/trivy-java-db:1')
     return ()
 
 
