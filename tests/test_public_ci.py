@@ -729,6 +729,10 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
         self.assertIn("params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'", self.pipeline)
 
+    def test_jenkins_exports_the_declared_image_parameter(self):
+        environment = self.pipeline.split('  environment {', 1)[1].split('  stages {', 1)[0]
+        self.assertIn('IMAGE = "${params.IMAGE ?: \'\'}"', environment)
+
     def test_native_arm64_sync_is_exact_and_expires_when_target_moves(self):
         provenance = self.pipeline.split("stage('Provenance')", 1)[1].split("stage('Contract')", 1)[0]
         self.assertIn('require_one_time_sync "$@"', provenance)
@@ -737,6 +741,7 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('git rev-list --parents -n 1 "$1")" = "$1 $3"', provenance)
         for branch_name, target, tip, branch in (
             ('sync/development-to-staging-native-arm64-trivy-workspace-tmp', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-nginx-118', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
