@@ -14,6 +14,9 @@
 // Job requirements (owned by Jenkins, not by this repository):
 // - multibranch pipeline with a non-shallow checkout;
 // - an x86_64 agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
+// - PR builds infer IMAGE from the diff (tools/select_image.py); IMAGE stays a
+//   parameter for manual runs. Promotion builds (target staging/main) validate
+//   linux/amd64 and linux/arm64 in parallel, each on its native agent;
 //   ARM64 targets require qemu-aarch64 binfmt on this AMD64 CI host;
 // - optional dedicated AArch64 agent labeled `ragnarsec-linux-arm64`, with
 //   the same rootless Docker and guarded egress contract; never the controller;
@@ -25,7 +28,7 @@
 // - a required status check named after this job, configured in the ruleset.
 
 pipeline {
-  agent { label "${params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'}" }
+  agent none
 
   options {
     skipDefaultCheckout()
@@ -38,6 +41,7 @@ pipeline {
     choice(
       name: 'IMAGE',
       choices: [
+        '',
         'ragnarsec-alertmanager',
         'ragnarsec-arcane',
         'ragnarsec-base',
@@ -62,7 +66,7 @@ pipeline {
         'ragnarsec-valkey',
         'ragnarsec-wgdashboard'
       ],
-      description: 'One image; only its required build parents are included.'
+      description: 'One image; only its required build parents are included. Empty = infer from the change request diff.'
     )
     booleanParam(
       name: 'PUBLISH',
@@ -102,12 +106,14 @@ pipeline {
 
   stages {
     stage('Checkout SCM') {
+      agent { label 'ragnarsec-linux' }
       steps {
         checkout scm
       }
     }
 
     stage('Provenance') {
+      agent { label 'ragnarsec-linux' }
       steps {
         sh '''
           set -euo pipefail
@@ -232,6 +238,7 @@ pipeline {
     }
 
     stage('Contract') {
+      agent { label 'ragnarsec-linux' }
       steps {
         sh '''
           set -euo pipefail
@@ -250,13 +257,11 @@ pipeline {
     }
 
     stage('Tools') {
+      agent { label 'ragnarsec-linux' }
       steps {
         sh '''
           set -euo pipefail
-          case "$CI_NATIVE_ARM64:$(uname -m):$PLATFORMS" in
-            true:aarch64:linux/arm64|false:x86_64:*) ;;
-            *) echo 'STOP: runner architecture or native ARM64 target mismatch.' >&2; exit 2 ;;
-          esac
+          test "$(uname -m)" = x86_64 || { echo 'STOP: control stages require the x86_64 agent.' >&2; exit 2; }
           : "${CI_ROOT:?}"
           # Jenkins may reuse the workspace; the installer requires a new
           # directory and validation receipts must never survive a build.
@@ -268,6 +273,7 @@ pipeline {
     }
 
     stage('Secret scan') {
+      agent { label 'ragnarsec-linux' }
       steps {
         sh '''
           set -euo pipefail
@@ -287,37 +293,52 @@ GITLEAKS_CONFIG
       }
     }
 
-    stage('Plan and validate') {
+    stage('Plan') {
+      agent { label 'ragnarsec-linux' }
       steps {
         sh '''
           set -euo pipefail
-          # Explicit checkout does not reliably export GIT_COMMIT to later steps.
-          export GIT_COMMIT="$(git rev-parse --verify HEAD)"
           export PATH="$CI_TOOLS:$PATH"
-          export BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          runner_arch=amd64
-          if [ "$CI_NATIVE_ARM64" = true ]; then runner_arch=arm64; fi
-          export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-${runner_arch}"
-          if [ -n "${IMAGE_TAG_SUFFIX:-}" ]; then
-            export IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"
-          fi
-          mkdir -p "$CI_ROOT"
-          printf '%s' "$IMAGE_TAG" > "$CI_ROOT/image-tag"
           target="${CHANGE_TARGET:-$BRANCH_NAME}"
-          python3 tools/image_ci.py plan --image "$IMAGE"
+          git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/${target}"
+          # One image per build: explicit parameter wins; otherwise infer from the diff.
+          python3 tools/select_image.py --image "$IMAGE" --base "origin/${target}" --head HEAD 2>ragnarsec-ci-image
+          resolved="$(cat ragnarsec-ci-image)"
+          echo "Resolved image: ${resolved}"
+          # Dependency and build-egress pre-flight; fails before any build.
+          python3 tools/image_ci.py plan --image "$resolved"
           if [ "$target" = "development" ]; then
             echo 'Development build: plan only; full image validation runs on staging.'
-          else
-            # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
-            validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
-            TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
-              --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           fi
         '''
+        stash name: 'resolved-image', includes: 'ragnarsec-ci-image'
+      }
+    }
+
+    stage('Validate') {
+      when {
+        anyOf {
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'staging' }
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'main' }
+        }
+      }
+      // Each platform validates on its native agent with its own checkout and tools.
+      parallel {
+        stage('Validate linux/amd64') {
+          agent { label 'ragnarsec-linux' }
+          environment { CI_PLATFORM = 'linux/amd64'; CI_RUNNER_ARCH = 'amd64' }
+          steps { script { validatePlatform() } }
+        }
+        stage('Validate linux/arm64') {
+          agent { label 'ragnarsec-linux-arm64' }
+          environment { CI_PLATFORM = 'linux/arm64'; CI_RUNNER_ARCH = 'arm64' }
+          steps { script { validatePlatform() } }
+        }
       }
     }
 
     stage('Publish') {
+      agent { label 'ragnarsec-linux' }
       when {
         allOf {
           expression { params.PUBLISH }
@@ -325,6 +346,8 @@ GITLEAKS_CONFIG
         }
       }
       steps {
+        checkout scm
+        unstash 'resolved-image'
         input message: 'Publish the validated digests to the registry?', ok: 'Publish'
         withCredentials([
           usernamePassword(
@@ -339,6 +362,7 @@ GITLEAKS_CONFIG
             set -euo pipefail
             export PATH="$CI_TOOLS:$PATH"
             export IMAGE_TAG="$(cat "$CI_ROOT/image-tag")"
+            export IMAGE="$(cat ragnarsec-ci-image)"
             python3 tools/release_signing_guard.py
             export PUBLICATION_ENABLED=true
             printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
@@ -371,4 +395,33 @@ GITLEAKS_CONFIG
       echo 'Validation failed. Do not publish or merge on this build.'
     }
   }
+}
+
+// Validation of one platform on its native agent. Called from the parallel matrix.
+def validatePlatform() {
+  checkout scm
+  unstash 'resolved-image'
+  sh '''
+    set -euo pipefail
+    case "$CI_RUNNER_ARCH:$(uname -m)" in
+      amd64:x86_64|arm64:aarch64) ;;
+      *) echo 'STOP: platform/agent mismatch.' >&2; exit 2 ;;
+    esac
+    export IMAGE="$(cat ragnarsec-ci-image)"
+    export PLATFORMS="$CI_PLATFORM"
+    export CI_NATIVE_ARM64="$([ "$CI_RUNNER_ARCH" = arm64 ] && echo true || echo false)"
+    export GIT_COMMIT="$(git rev-parse --verify HEAD)"
+    export BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    rm -rf "$CI_ROOT"; mkdir -m 700 -p "$CI_ROOT"
+    python3 tools/ci_docker_endpoint.py
+    python3 tools/install_ci_tools.py "$CI_TOOLS"
+    export PATH="$CI_TOOLS:$PATH"
+    export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-${CI_RUNNER_ARCH}"
+    if [ -n "${IMAGE_TAG_SUFFIX:-}" ]; then export IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"; fi
+    printf '%s' "$IMAGE_TAG" > "$CI_ROOT/image-tag"
+    # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
+    validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
+    TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
+      --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
+  '''
 }

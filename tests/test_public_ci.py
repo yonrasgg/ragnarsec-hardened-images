@@ -738,10 +738,13 @@ class JenkinsBoundaries(unittest.TestCase):
         for forbidden in ('actions/checkout','secrets.GITHUB_TOKEN','GITHUB_ACTIONS','workflow_dispatch','ubuntu-24.04'):
             self.assertNotIn(forbidden,self.pipeline)
     def test_validation_and_publication_are_separate(self):
-        validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]
+        validation=self.pipeline.split("stage('Plan')",1)[1].split("stage('Publish')",1)[0]
         self.assertNotIn('docker login',validation)
         self.assertNotIn('withCredentials',validation)
-        publication=self.pipeline.split("stage('Publish')",1)[1]
+        matrix=self.pipeline.split('def validatePlatform()',1)[1]
+        self.assertNotIn('docker login',matrix)
+        self.assertNotIn('withCredentials',matrix)
+        publication=self.pipeline.split("stage('Publish')",1)[1].split('def validatePlatform()',1)[0]
         self.assertIn('params.PUBLISH',publication)
         self.assertIn("env.BRANCH_NAME == 'main'",publication)
         self.assertIn('input message',publication)
@@ -782,12 +785,13 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('require_one_time_sync "$head" main',provenance)
 
     def test_development_is_plan_only(self):
-        validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]
-        before,after=validation.split('if [ "$target" = "development" ]',1)
-        self.assertIn('image_ci.py plan',before)
-        self.assertNotIn('image_ci.py validate',before)
-        self.assertIn('else',after)
-        self.assertIn('image_ci.py validate',after)
+        plan=self.pipeline.split("stage('Plan')",1)[1].split("stage('Validate')",1)[0]
+        self.assertIn('image_ci.py plan',plan)
+        self.assertNotIn('image_ci.py validate',plan)
+        self.assertIn('if [ "$target" = "development" ]',plan)
+        validate=self.pipeline.split("stage('Validate')",1)[1].split("stage('Publish')",1)[0]
+        self.assertNotIn("== 'development'",validate)
+        self.assertIn('image_ci.py validate',self.pipeline.split('def validatePlatform()',1)[1])
     def test_build_root_is_recreated_and_removed(self):
         tools=self.pipeline.split("stage('Tools')",1)[1].split("stage('Secret scan')",1)[0]
         self.assertIn(': "${CI_ROOT:?}"',tools)
@@ -798,9 +802,30 @@ class JenkinsBoundaries(unittest.TestCase):
 
     def test_jenkins_checks_selected_runner_before_tool_installation(self):
         tools = self.pipeline.split("stage('Tools')", 1)[1].split("stage('Secret scan')", 1)[0]
-        guard = 'true:aarch64:linux/arm64|false:x86_64:*'
+        guard = 'test "$(uname -m)" = x86_64'
         self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
-        self.assertIn("params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'", self.pipeline)
+        self.assertIn('agent none', self.pipeline)
+
+    def test_jenkins_validates_both_platforms_in_parallel_on_native_agents(self):
+        validate = self.pipeline.split("stage('Validate')", 1)[1].split("stage('Publish')", 1)[0]
+        self.assertIn('parallel {', validate)
+        self.assertIn("stage('Validate linux/amd64')", validate)
+        self.assertIn("stage('Validate linux/arm64')", validate)
+        self.assertIn("agent { label 'ragnarsec-linux' }", validate)
+        self.assertIn("agent { label 'ragnarsec-linux-arm64' }", validate)
+        self.assertIn("== 'staging'", validate)
+        self.assertIn("== 'main'", validate)
+        func = self.pipeline.split('def validatePlatform()', 1)[1]
+        self.assertIn('amd64:x86_64|arm64:aarch64', func)
+        self.assertIn('RAGNARSEC_REQUIRE_STAGE_EGRESS=1', func)
+        self.assertIn('image_ci.py validate', func)
+
+    def test_jenkins_plan_stage_infers_image_and_runs_egress_gate(self):
+        plan = self.pipeline.split("stage('Plan')", 1)[1].split("stage('Validate')", 1)[0]
+        self.assertIn('tools/select_image.py --image "$IMAGE"', plan)
+        self.assertLess(plan.index('select_image.py'), plan.index('image_ci.py plan'))
+        self.assertIn("stash name: 'resolved-image'", plan)
+        self.assertIn('Development build: plan only', plan)
 
     def test_jenkins_exports_the_declared_image_parameter(self):
         environment = self.pipeline.split('  environment {', 1)[1].split('  stages {', 1)[0]

@@ -16,7 +16,7 @@ class CheckoutContract(unittest.TestCase):
         pipeline = (Path(__file__).resolve().parents[1] / "Jenkinsfile").read_text()
         self.assertRegex(pipeline, r"options\s*\{\s*skipDefaultCheckout\(\)")
         entry = re.search(
-            r"stages\s*\{\s*stage\('Checkout SCM'\)\s*\{\s*steps\s*\{\s*"
+            r"stages\s*\{\s*stage\('Checkout SCM'\)\s*\{\s*agent\s*\{[^}]*\}\s*steps\s*\{\s*"
             r"checkout scm\s*\}\s*\}\s*stage\('Provenance'\)",
             pipeline,
         )
