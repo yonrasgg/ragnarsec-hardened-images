@@ -24,6 +24,9 @@ short key ID. A valid signature with a pinned key is not that confirmation.
 
 - The final image starts as UID/GID `1000:1000`. Tini supervises a startup
   script that generates a per-start peer secret in `/tmp` for the admin proxy.
+- `/etc/letsencrypt.ini` keeps the upstream webroot and ECDSA settings but drops
+  `preferred-chain`, so issuance works against the ACME directory given by
+  `LE_SERVER` (public or private CA) without a hard-coded public root.
 - The final layers do not contain the OpenResty build tree or upstream test
   CA. Only the PEM value in the certificate upload API example is removed;
   the live schema is unchanged. Trivy secret scanning stays enabled.

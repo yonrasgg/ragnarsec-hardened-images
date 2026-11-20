@@ -26,6 +26,9 @@ copy("frontend/dist", "app/frontend");
 for (const file of ["etc/nginx", "etc/letsencrypt.ini",
     "etc/logrotate.d/nginx-proxy-manager", "var/www/html"]) copy(`rootfs/${file}`, file);
 fs.unlinkSync(output("etc/nginx/conf.d/dev.conf"));
+// The ACME directory is selected at runtime (LE_SERVER). A fixed `preferred-chain`
+// names a public Let's Encrypt root and breaks issuance against a private CA.
+edit("etc/letsencrypt.ini", (s) => replace(s, /^preferred-chain = .*\n/m, ""));
 
 edit("app/schema/paths/nginx/certificates/certID/upload/post.json", (text) => {
     const schema = JSON.parse(text);
