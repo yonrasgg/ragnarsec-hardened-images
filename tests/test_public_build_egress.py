@@ -38,6 +38,32 @@ class BuildEgressManifest(unittest.TestCase):
                          'files.pythonhosted.org', 'dl-cdn.alpinelinux.org'):
             self.assertIn(expected, hosts)
 
+    def test_node_alpine_base_requires_mirror_in_allowlist(self):
+        mirror = 'dl-cdn.alpinelinux.org'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dockerfile = root / 'Dockerfile'
+            manifest = root / 'build-egress.json'
+            manifest.write_text(json.dumps({
+                'allowed_hosts': [],
+                'implicit_by_base': {'node:*-alpine': [mirror]},
+            }))
+            image = {'name': 'ragnarsec-demo', 'context': '.', 'dockerfile': 'Dockerfile'}
+            with patch.object(ci, 'ROOT', root), patch.object(ci, 'EGRESS_MANIFEST', manifest):
+                for base in (
+                    'node:26.13.1-alpine',
+                    'docker.io/library/node:26.13.1-alpine',
+                    'docker.io/library/node:26.13.1-alpine@sha256:' + 'a' * 64 + ' AS build',
+                ):
+                    with self.subTest(base=base):
+                        dockerfile.write_text(f'FROM {base}\nRUN apk update\n')
+                        self.assertEqual(ci.build_egress_hosts(image), [mirror])
+                        with self.assertRaisesRegex(
+                                ValueError, r'build-egress-not-allowlisted:.*dl-cdn\.alpinelinux\.org'):
+                            ci.check_build_egress([image])
+                dockerfile.write_text('FROM docker.io/library/node:26.13.1-bookworm\n')
+                self.assertEqual(ci.build_egress_hosts(image), [])
+
     def test_unlisted_origin_fails_plan_before_any_build(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -229,7 +229,8 @@ def build_egress_hosts(image):
     for f in files:
         hosts.update(h.lower() for h in _URL_HOST.findall(f.read_text(errors='replace')))
     bases = [b.lower() for b in re.findall(
-        r'^FROM\s+(?:docker\.io/)?(?:library/)?([a-z0-9][a-z0-9._/-]*)', dockerfile, re.M | re.I)]
+        r'^FROM\s+(?:docker\.io/)?(?:library/)?'
+        r'([a-z0-9][a-z0-9._/-]*(?::[a-z0-9_][a-z0-9_.-]*)?)', dockerfile, re.M | re.I)]
     for base in bases:
         if base.startswith('alpine'):
             hosts.update(implicit.get('alpine', []))
