@@ -304,6 +304,8 @@ def validate(selected, tag, output):
                 raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,
                     '--image', ref, '--config', str(test))
+            if name == 'ragnarsec-nginx-proxy-manager':
+                command('bash', str(ROOT / 'nginx-proxy-manager' / 'test-runtime.sh'), image_id)
             scan = ['trivy', 'image', *db_args, *trivy_checks_args(),
                     '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
