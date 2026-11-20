@@ -15,6 +15,8 @@
 // - multibranch pipeline with a non-shallow checkout;
 // - an x86_64 agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
 //   ARM64 targets require qemu-aarch64 binfmt on this AMD64 CI host;
+// - optional dedicated AArch64 agent labeled `ragnarsec-linux-arm64`, with
+//   the same rootless Docker and guarded egress contract; never the controller;
 // - a selected buildx builder using the `docker` driver so validated local
 //   parent tags are visible to dependent builds before publication;
 // - credentials id `ragnarsec-registry` (username/password) for publication;
@@ -23,7 +25,7 @@
 // - a required status check named after this job, configured in the ruleset.
 
 pipeline {
-  agent { label 'ragnarsec-linux' }
+  agent { label "${params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'}" }
 
   options {
     skipDefaultCheckout()
@@ -77,6 +79,11 @@ pipeline {
       defaultValue: '',
       description: 'Optional suffix appended to the generated image tag.'
     )
+    booleanParam(
+      name: 'NATIVE_ARM64',
+      defaultValue: false,
+      description: 'Use the dedicated ARM64 runner. Requires PLATFORMS=linux/arm64.'
+    )
   }
 
   environment {
@@ -84,6 +91,7 @@ pipeline {
     DOCKER_CONTEXT = ''
     PYTHONDONTWRITEBYTECODE = '1'
     PLATFORMS = "${params.PLATFORMS}"
+    CI_NATIVE_ARM64 = "${params.NATIVE_ARM64 == true ? 'true' : 'false'}"
     CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"
     CI_TOOLS = "${WORKSPACE_TMP}/ragnarsec-ci/tools"
     VALIDATION_OUTPUT = "${WORKSPACE_TMP}/ragnarsec-ci/image-validation"
@@ -145,7 +153,14 @@ pipeline {
               "$(git rev-parse "origin/${source_branch}^{tree}")" || {
                 echo 'STOP: sync tree differs from current source branch.' >&2
                 exit 2
-              }
+            }
+          }
+          require_linear_arm64_sync() {
+            require_one_time_sync "$@"
+            test "$(git rev-list --parents -n 1 "$1")" = "$1 $3" || {
+              echo 'STOP: ARM64 sync must have exactly the pinned target parent.' >&2
+              exit 2
+            }
           }
           target="${CHANGE_TARGET:-$BRANCH_NAME}"
           if [ -n "${CHANGE_TARGET:-}" ]; then
@@ -156,6 +171,9 @@ pipeline {
               staging)
                 if [ "$source" = "development" ]; then
                   require_traceable development "$head" 'staging pull request is not traceable to development.'
+                elif [ "$source" = "sync/development-to-staging-native-arm64-trivy-workspace-tmp" ]; then
+                  require_linear_arm64_sync "$head" staging \
+                    e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
                   require_one_time_sync "$head" staging \
                     be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
@@ -174,6 +192,9 @@ pipeline {
               main)
                 if [ "$source" = "staging" ]; then
                   require_traceable staging "$head" 'main pull request is not traceable to staging.'
+                elif [ "$source" = "sync/staging-to-main-native-arm64-106" ]; then
+                  require_linear_arm64_sync "$head" main \
+                    32ba41c1ec403776cb4a8d8df3d184205f6020d0 staging
                 elif [ "$source" = "sync/staging-to-main-vex-20261103" ]; then
                   require_one_time_sync "$head" main \
                     faaf17460b6e828c02e455665015fb05828b1c87 staging
@@ -219,10 +240,10 @@ pipeline {
       steps {
         sh '''
           set -euo pipefail
-          test "$(uname -m)" = "x86_64" || {
-            echo 'STOP: pinned CI tools require an x86_64 host; ARM64 targets need QEMU.' >&2
-            exit 2
-          }
+          case "$CI_NATIVE_ARM64:$(uname -m):$PLATFORMS" in
+            true:aarch64:linux/arm64|false:x86_64:*) ;;
+            *) echo 'STOP: runner architecture or native ARM64 target mismatch.' >&2; exit 2 ;;
+          esac
           : "${CI_ROOT:?}"
           # Jenkins may reuse the workspace; the installer requires a new
           # directory and validation receipts must never survive a build.
@@ -261,7 +282,9 @@ GITLEAKS_CONFIG
           export GIT_COMMIT="$(git rev-parse --verify HEAD)"
           export PATH="$CI_TOOLS:$PATH"
           export BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-amd64"
+          runner_arch=amd64
+          if [ "$CI_NATIVE_ARM64" = true ]; then runner_arch=arm64; fi
+          export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-${runner_arch}"
           if [ -n "${IMAGE_TAG_SUFFIX:-}" ]; then
             export IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"
           fi
@@ -272,7 +295,9 @@ GITLEAKS_CONFIG
           if [ "$target" = "development" ]; then
             echo 'Development build: plan only; full image validation runs on staging.'
           else
-            RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
+            # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
+            validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
+            TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
               --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           fi
         '''
