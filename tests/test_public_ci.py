@@ -818,6 +818,7 @@ class JenkinsBoundaries(unittest.TestCase):
             ('sync/development-to-staging-native-nginx-budget', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/development-to-staging-native-npm-124', 'staging', 'edc2b7eee148551f122a89c59298008f69eaf70d', 'development'),
             ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
+            ('sync/staging-to-main-native-npm-124', 'main', '86db549ecd9853853e8821844dccc9dc8197e8c5', 'staging'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
             self.assertIn(f'require_linear_arm64_sync "$head" {target}', block)
