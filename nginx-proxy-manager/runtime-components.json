@@ -1,0 +1,34 @@
+[
+  {
+    "name": "OpenResty",
+    "version": "1.31.8.1",
+    "type": "application",
+    "purl": "pkg:generic/openresty@1.31.8.1",
+    "path": "/usr/sbin/nginx",
+    "source": "https://openresty.org/download/openresty-1.31.8.1.tar.gz"
+  },
+  {
+    "name": "OpenResty LuaJIT",
+    "version": "2.1-20261023",
+    "type": "library",
+    "purl": "pkg:generic/openresty-luajit@2.1-20261023",
+    "path": "/etc/nginx/luajit/lib/libluajit-5.1.so.2",
+    "source": "https://openresty.org/download/openresty-1.31.8.1.tar.gz"
+  },
+  {
+    "name": "Node.js",
+    "version": "26.13.1",
+    "type": "application",
+    "purl": "pkg:generic/nodejs@26.13.1",
+    "path": "/usr/local/bin/node",
+    "source": "https://github.com/nodejs/node/tree/v26.13.1"
+  },
+  {
+    "name": "ngx_http_geoip2_module",
+    "version": "3.4",
+    "type": "library",
+    "purl": "pkg:github/leev/ngx_http_geoip2_module@cbaa35461c62a99d2577e6bae3273492502d8769",
+    "path": "/usr/lib/nginx/modules/ngx_http_geoip2_module.so",
+    "source": "https://github.com/leev/ngx_http_geoip2_module/tree/cbaa35461c62a99d2577e6bae3273492502d8769"
+  }
+]
