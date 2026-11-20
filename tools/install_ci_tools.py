@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install checksum-pinned AMD64 CI tools into a new temporary directory."""
+"""Install checksum-pinned native CI tools into a new temporary directory."""
 import argparse
 import hashlib
 import io
@@ -9,6 +9,7 @@ from pathlib import Path
 import tarfile
 import urllib.request
 
+MANIFESTS = {'x86_64': 'ci-tools.json', 'aarch64': 'ci-tools.linux-arm64.json'}
 
 def payload(data, pin):
     if hashlib.sha256(data).hexdigest() != pin['sha256']:
@@ -27,10 +28,10 @@ def main():
     parser.add_argument('directory', type=Path)
     args = parser.parse_args()
     host = os.uname().machine
-    if host != 'x86_64':
+    if host not in MANIFESTS:
         raise ValueError('unsupported-ci-host-arch:' + host)
+    pins = json.loads(Path(__file__).with_name(MANIFESTS[host]).read_text())
     args.directory.mkdir(mode=0o700, exist_ok=False)
-    pins = json.loads(Path(__file__).with_name('ci-tools.json').read_text())
     for name, pin in pins.items():
         if not pin['url'].startswith('https://github.com/') or '/releases/download/' not in pin['url']:
             raise ValueError('non-release-download')

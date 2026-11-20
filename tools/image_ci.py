@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Bounded multi-arch image validation.
 
-Runner requirements: Linux x86_64 with buildx and binfmt/qemu for ARM64 target
-images. The pinned CI tools are AMD64-only; native ARM64 hosts are not yet
-supported. No production hosts, deployment, global Docker cleanup or caches.
+Runner requirements: Linux with buildx. The dedicated native AArch64 runner
+is limited to linux/arm64; x86_64 still requires binfmt for ARM64 targets.
+No production hosts, deployment, global Docker cleanup or caches.
 """
 import argparse
 import datetime
+import gzip
 import hashlib
 import ipaddress
 import json
@@ -15,6 +16,8 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tarfile
+import tempfile
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,8 +90,60 @@ def command(*args, capture=False):
     return subprocess.run(args, cwd=ROOT, check=True, text=True, capture_output=capture)
 
 
+def archive_layer_bytes(fileobj, platform):
+    """Count uncompressed layer blobs once as listed in the saved image."""
+    with tarfile.open(fileobj=fileobj, mode='r:') as archive:
+        def member(name):
+            item = archive.getmember(name)
+            if not item.isfile():
+                raise ValueError('budget-image-archive-not-a-file')
+            return archive.extractfile(item)
+
+        with member('manifest.json') as manifest_file:
+            manifests = json.load(manifest_file)
+        if not isinstance(manifests, list) or len(manifests) != 1:
+            raise ValueError('budget-image-archive-requires-one-image')
+        image = manifests[0]
+        with member(image['Config']) as config_file:
+            config = json.load(config_file)
+        if (config.get('os'), config.get('architecture')) != tuple(platform.split('/')):
+            raise ValueError('budget-image-platform-mismatch')
+        layers = image['Layers']
+        rootfs = config['rootfs']
+        diff_ids = rootfs['diff_ids']
+        if rootfs.get('type') != 'layers' or len(layers) != len(diff_ids):
+            raise ValueError('budget-image-layer-count-mismatch')
+        size = 0
+        for name, expected in zip(layers, diff_ids):
+            with member(name) as data:
+                magic = data.read(2)
+                data.seek(0)
+                stream = gzip.GzipFile(fileobj=data) if magic == b'\x1f\x8b' else data
+                digest = hashlib.sha256()
+                with stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                        size += len(chunk)
+                        digest.update(chunk)
+                if 'sha256:' + digest.hexdigest() != expected:
+                    raise ValueError('budget-layer-digest-mismatch')
+        return size
+
+
+def image_layer_bytes(ref, platform, output):
+    # The image archive stays under the per-run workspace and is closed on error.
+    with tempfile.TemporaryFile(dir=output) as archive:
+        subprocess.run(('docker', 'image', 'save', '--platform', platform, ref),
+                       cwd=ROOT, check=True, stdout=archive)
+        archive.seek(0)
+        return archive_layer_bytes(archive, platform)
+
+
 def require_platforms_available(targets):
     host = os.uname().machine
+    if host == 'aarch64':
+        if tuple(targets) != ('linux/arm64',):
+            raise ValueError('native-arm64-runner-requires-linux-arm64')
+        return
     if host != 'x86_64':
         raise ValueError('unsupported-ci-host-arch:' + host)
     for platform in targets:
@@ -139,7 +194,8 @@ def build_proxy_args():
 
 def trivy_db_args():
     if staging_egress_required():
-        return ('--db-repository', 'ghcr.io/aquasecurity/trivy-db:2')
+        return ('--db-repository', 'ghcr.io/aquasecurity/trivy-db:2',
+                '--java-db-repository', 'ghcr.io/aquasecurity/trivy-java-db:1')
     return ()
 
 
@@ -261,6 +317,8 @@ def validate(selected, tag, output):
     registry_problems = policy.check_exceptions(exception_registry)
     if registry_problems:
         raise ValueError('exception-registry:' + ','.join(registry_problems))
+    budgets_path = ROOT / 'budgets.json'
+    budgeted_images = json.loads(budgets_path.read_text())
     for image in plan(selected):
         name = image['name']
         test = ROOT / 'tests' / (name + '.yaml')
@@ -293,10 +351,12 @@ def validate(selected, tag, output):
                     '--provenance=false', '--sbom=false', '--load',
                     '-t', ref, *_build_args(image, tag + '-' + suffix, platform))
             image_id = command('docker', 'image', 'inspect', '--format={{.Id}}', ref, capture=True).stdout.strip()
-            size = int(command('docker', 'image', 'inspect', '--format={{.Size}}', ref, capture=True).stdout.strip())
-            over = policy.check_budget(name, size, ROOT / 'budgets.json')
-            if over:
-                raise ValueError(over[0])
+            if name in budgeted_images:
+                size = image_layer_bytes(ref, platform, output)
+                print(f'IMAGE_LAYER_BYTES {name} {platform} {size}')
+                over = policy.check_budget(name, size, budgets_path)
+                if over:
+                    raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,
                     '--image', ref, '--config', str(test))
             scan = ['trivy', 'image', *db_args, *trivy_checks_args(),
