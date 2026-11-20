@@ -736,7 +736,7 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('git rev-parse "origin/${source_branch}^{tree}"', provenance)
         self.assertIn('git rev-list --parents -n 1 "$1")" = "$1 $3"', provenance)
         for branch_name, target, tip, branch in (
-            ('sync/development-to-staging-native-arm64-trivy-java-db', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-arm64-trivy-workspace-tmp', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
