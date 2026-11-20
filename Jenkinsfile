@@ -178,6 +178,9 @@ pipeline {
                 elif [ "$source" = "sync/development-to-staging-native-nginx-118" ]; then
                   require_linear_arm64_sync "$head" staging \
                     e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
+                elif [ "$source" = "sync/development-to-staging-native-nginx-budget" ]; then
+                  require_linear_arm64_sync "$head" staging \
+                    e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
                 elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
                   require_one_time_sync "$head" staging \
                     be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
