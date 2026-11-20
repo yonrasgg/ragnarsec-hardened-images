@@ -71,4 +71,5 @@ wget -qO /dev/null http://127.0.0.1:8181/api/
 TEST
 docker stop -t 8 "$container" >/dev/null
 test "$(docker inspect "$container" --format '{{.State.ExitCode}}')" = 0
+bash "$(dirname "$0")/test-dns-runtime.sh" "$image"
 printf '%s\n' 'NPM_NATIVE_RUNTIME_SMOKE_OK'
