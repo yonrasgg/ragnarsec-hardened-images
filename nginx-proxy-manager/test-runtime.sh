@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local/native CI only: no network, published ports, host mounts or credentials.
+# Local/native CI only: no external network, published ports, host mounts or credentials.
 set -euo pipefail
 image=${1:?exact image ID required}
 [[ $image =~ ^sha256:[a-f0-9]{64}$ ]]
@@ -29,6 +29,7 @@ grep -Eq '^NoNewPrivs:[[:space:]]+1$' /proc/self/status
 test -s /data/database.sqlite
 test -f /data/logs/logrotate.status
 test "$(stat -c '%a' /tmp/npm/production.conf)" = 600
+test "$(stat -c '%a' /tmp/npm/resolvers.conf)" = 600
 ! touch /etc/nginx/not-writable 2>/dev/null
 wget -qO /tmp/npm-ui.html http://127.0.0.1:8181/
 cmp /tmp/npm-ui.html /app/frontend/index.html
@@ -71,4 +72,5 @@ wget -qO /dev/null http://127.0.0.1:8181/api/
 TEST
 docker stop -t 8 "$container" >/dev/null
 test "$(docker inspect "$container" --format '{{.State.ExitCode}}')" = 0
+bash "$(dirname "$0")/test-dns-runtime.sh" "$image"
 printf '%s\n' 'NPM_NATIVE_RUNTIME_SMOKE_OK'
