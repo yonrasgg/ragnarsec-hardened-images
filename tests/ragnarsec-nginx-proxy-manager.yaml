@@ -26,6 +26,10 @@ fileExistenceTests:
     path: '/etc/letsencrypt'
     shouldExist: true
 commandTests:
+  - name: 'ACME client config is CA-agnostic'
+    command: '/bin/busybox'
+    args: ['sh', '-c', 'grep -q "^webroot-path = /data/letsencrypt-acme-challenge$" /etc/letsencrypt.ini && grep -q "^key-type = ecdsa$" /etc/letsencrypt.ini && ! grep -q "^preferred-chain" /etc/letsencrypt.ini']
+    exitCode: 0
   - name: 'Certificate schema preserved without the response PEM example'
     command: 'node'
     args:
