@@ -16,8 +16,8 @@
   },
   "ragnarsec-nginx": {
     "packages": {
-      "nginx": "1.30.6-r0",
-      "openssl": "3.5.9-r0",
+      "nginx": "1.30.7-r0",
+      "openssl": "3.5.9-r1",
       "pcre2": "10.49-r0"
     }
   }

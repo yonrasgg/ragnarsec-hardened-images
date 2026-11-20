@@ -81,7 +81,7 @@ checks the built bytes before any registry push.
 |---|---|
 | Source boundary | [`publication_guard.py`](tools/publication_guard.py) and a pinned Gitleaks tree/history scan ran against the intended commit and history. A clean scan is scoped evidence, not proof of no secrets. |
 | Build and policy | Lint passed and policy results were reviewed (some recipes report warnings rather than enforced failures); upstream inputs and output IDs are recorded. |
-| Image evidence | Structure tests, size budget, vulnerability/secret/misconfiguration scans, license scan, and a per-platform SBOM correspond to the **same local build**. The security scan blocks HIGH/CRITICAL findings and end-of-life operating systems. |
+| Image evidence | Structure tests, size budget, vulnerability/secret/misconfiguration scans, license scan, and a per-platform SBOM correspond to the **same local build**. Size budgets count uncompressed layer bytes, verified against the image's layer digests, not Docker's storage usage. The security scan blocks HIGH/CRITICAL findings and end-of-life operating systems. |
 | Release | After validation on `main`, `PUBLISH` and human approval are required. Publication pushes the validated images, assembles the index, and verifies digest-bound signatures and attestations. |
 
 The separate license scan currently uses `--exit-code 0`: its classifications

@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -25,7 +26,6 @@ def load(name):
     return module
 ci, install = load('image_ci'), load('install_ci_tools')
 policy = load('image_policy')
-
 
 class NpmRuntimeSbom(unittest.TestCase):
     def _verify(self, valid):
@@ -56,6 +56,45 @@ class NpmRuntimeSbom(unittest.TestCase):
 
     def test_npm_missing_binary_fails_without_writing_partial_sbom(self):
         self._verify(valid=False)
+
+
+class ImageSizeBudget(unittest.TestCase):
+    def archive(self, path, layer, *, compressed, diff_id=None, arch='arm64'):
+        digest = diff_id or 'sha256:' + hashlib.sha256(layer).hexdigest()
+        manifest = [{'Config': 'config.json', 'Layers': ['layer.tar']}]
+        config = {'os': 'linux', 'architecture': arch,
+                  'rootfs': {'type': 'layers', 'diff_ids': [digest]}}
+        with tarfile.open(path, 'w') as tar:
+            for name, data in (
+                ('manifest.json', json.dumps(manifest).encode()),
+                ('config.json', json.dumps(config).encode()),
+                ('layer.tar', gzip.compress(layer) if compressed else layer),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                tar.addfile(member, io.BytesIO(data))
+
+    def test_same_layer_bytes_for_compressed_and_plain_exports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'image.tar'
+            layer = b'layer contents' * 8192
+            for compressed in (False, True):
+                with self.subTest(compressed=compressed):
+                    self.archive(path, layer, compressed=compressed)
+                    with path.open('rb') as f:
+                        self.assertEqual(ci.archive_layer_bytes(f, 'linux/arm64'), len(layer))
+
+    def test_rejects_mismatched_image_platform_or_layer_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'image.tar'
+            for options, error in (
+                ({'arch': 'amd64'}, 'budget-image-platform-mismatch'),
+                ({'diff_id': 'sha256:' + '0' * 64}, 'budget-layer-digest-mismatch'),
+            ):
+                with self.subTest(error=error):
+                    self.archive(path, b'layer', compressed=True, **options)
+                    with path.open('rb') as f, self.assertRaisesRegex(ValueError, error):
+                        ci.archive_layer_bytes(f, 'linux/arm64')
 
 
 class ImagePlanning(unittest.TestCase):
@@ -144,13 +183,14 @@ class ImagePlanning(unittest.TestCase):
                                              'RAGNARSEC_REQUIRE_STAGE_EGRESS': '1'}), \
                  patch.object(ci, 'build_proxy_args', return_value=()), \
                  patch.object(ci, 'require_platforms_available'), \
-                 patch.object(ci, 'require_local_parent_builder'):
+                 patch.object(ci, 'require_local_parent_builder'), \
+                 patch.object(ci, 'image_layer_bytes', return_value=1024) as measure:
                 output = Path(tmp) / 'validated'
 
                 def fake(*args, capture=False):
                     if args[:3] == ('docker', 'image', 'inspect'):
-                        value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
-                        return subprocess.CompletedProcess([], 0, stdout=value)
+                        self.assertEqual(args[3], '--format={{.Id}}')
+                        return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
                     if args[:2] == ('trivy', 'image') and '--output' in args:
                         Path(args[args.index('--output') + 1]).write_text('{}')
                     return subprocess.CompletedProcess([], 0, stdout='')
@@ -160,6 +200,7 @@ class ImagePlanning(unittest.TestCase):
                 builds = [call.args for call in cmd.call_args_list
                           if call.args[:3] == ('docker', 'buildx', 'build')]
                 self.assertEqual(len(builds), 1)
+                measure.assert_called_once_with(builds[0][builds[0].index('-t') + 1], platform, output)
                 self.assertEqual(builds[0][builds[0].index('--platform') + 1], platform)
                 self.assertIn('--provenance=false', builds[0])
                 self.assertIn('--sbom=false', builds[0])
@@ -394,13 +435,13 @@ class VexPolicy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
              patch.object(ci, 'require_platforms_available'), \
-             patch.object(ci, 'require_local_parent_builder'):
+             patch.object(ci, 'require_local_parent_builder'), \
+             patch.object(ci, 'image_layer_bytes', return_value=1024):
             output = Path(tmp) / 'validated'
 
             def fake(*args, capture=False):
                 if args[:3] == ('docker', 'image', 'inspect'):
-                    value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
-                    return subprocess.CompletedProcess([], 0, stdout=value)
+                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
                 if args[:2] == ('trivy', 'image') and '--output' in args:
                     Path(args[args.index('--output') + 1]).write_text('{}')
                 return subprocess.CompletedProcess([], 0, stdout='')
@@ -761,6 +802,10 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
         self.assertIn("params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'", self.pipeline)
 
+    def test_jenkins_exports_the_declared_image_parameter(self):
+        environment = self.pipeline.split('  environment {', 1)[1].split('  stages {', 1)[0]
+        self.assertIn('IMAGE = "${params.IMAGE ?: \'\'}"', environment)
+
     def test_native_arm64_sync_is_exact_and_expires_when_target_moves(self):
         provenance = self.pipeline.split("stage('Provenance')", 1)[1].split("stage('Contract')", 1)[0]
         self.assertIn('require_one_time_sync "$@"', provenance)
@@ -769,6 +814,8 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('git rev-list --parents -n 1 "$1")" = "$1 $3"', provenance)
         for branch_name, target, tip, branch in (
             ('sync/development-to-staging-native-arm64-trivy-workspace-tmp', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-nginx-118', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-nginx-budget', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
