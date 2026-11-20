@@ -209,6 +209,60 @@ def _build_args(image, tag, platform):
               '-f', image['dockerfile'], image['context'])
 
 
+EGRESS_MANIFEST = ROOT / 'tools' / 'build-egress.json'
+_URL_HOST = re.compile(r'https://([a-z0-9.-]+\.[a-z]{2,})(?=[/:\s"\'`)]|$)', re.I)
+_CONTEXT_SUFFIXES = ('.sh', '.cjs', '.js', '.py', '.txt', '.patch')
+
+
+def build_egress_hosts(image):
+    """Hostnames a recipe's build may contact over HTTPS: URL literals in the Dockerfile and
+    its context scripts, plus implicit package sources inferred from base images and
+    package managers (declared in tools/build-egress.json ``implicit_by_base``)."""
+    manifest = json.loads(EGRESS_MANIFEST.read_text())
+    implicit = manifest.get('implicit_by_base', {})
+    dockerfile_path = ROOT / image['dockerfile']
+    dockerfile = dockerfile_path.read_text(errors='replace')
+    context = ROOT / image['context']
+    files = [dockerfile_path] + sorted(f for f in context.iterdir()
+                                       if f.is_file() and f.suffix in _CONTEXT_SUFFIXES)
+    hosts = set()
+    for f in files:
+        hosts.update(h.lower() for h in _URL_HOST.findall(f.read_text(errors='replace')))
+    bases = [b.lower() for b in re.findall(
+        r'^FROM\s+(?:docker\.io/)?(?:library/)?([a-z0-9][a-z0-9._/-]*)', dockerfile, re.M | re.I)]
+    for base in bases:
+        if base.startswith('alpine'):
+            hosts.update(implicit.get('alpine', []))
+        if base.startswith(('debian', 'ubuntu')):
+            hosts.update(implicit.get('debian', []))
+        if re.match(r'node:.*-alpine', base):
+            hosts.update(implicit.get('node:*-alpine', []))
+    if re.search(r'\bapk\s+add\b', dockerfile):
+        hosts.update(implicit.get('alpine', []))
+    if re.search(r'\bapt-get\s+(?:update|install)\b', dockerfile):
+        hosts.update(implicit.get('debian', []))
+    if re.search(r'\byarn(?:\.js)?\s+install\b', dockerfile):
+        hosts.update(implicit.get('yarn', []))
+    if re.search(r'\bpip3?\b[^\n]*\binstall\b', dockerfile):
+        hosts.update(implicit.get('pip', []))
+    return sorted(hosts)
+
+
+def check_build_egress(images):
+    """Pre-flight for the build agents' egress proxy. Fails when any planned recipe needs a
+    host that tools/build-egress.json does not allow. Never widens egress by itself: the
+    manifest and the proxy allowlist are changed together under CHG-CI-003."""
+    manifest = json.loads(EGRESS_MANIFEST.read_text())
+    allowed = {h.lower() for h in manifest['allowed_hosts']}
+    if any(not re.fullmatch(r'[a-z0-9.-]+\.[a-z]{2,}', h) or '*' in h for h in allowed):
+        raise ValueError('build-egress-manifest-requires-exact-hosts')
+    missing = {image['name']: sorted(set(build_egress_hosts(image)) - allowed) for image in images}
+    missing = {k: v for k, v in missing.items() if v}
+    if missing:
+        raise ValueError('build-egress-not-allowlisted:' + json.dumps(missing, sort_keys=True))
+    return sorted(allowed)
+
+
 def staging_egress_required():
     return os.environ.get('RAGNARSEC_REQUIRE_STAGE_EGRESS') == '1'
 
@@ -532,7 +586,11 @@ def main():
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.action == 'plan':
-        print(json.dumps(plan(args.image)))
+        ordered = plan(args.image)
+        # Pre-flight for the build agents' egress proxy: every host a recipe may contact
+        # must be declared in tools/build-egress.json, or the plan fails before any build.
+        check_build_egress(ordered)
+        print(json.dumps(ordered))
     else:
         if args.output is None:
             parser.error('--output required')
