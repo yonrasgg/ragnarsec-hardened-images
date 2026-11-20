@@ -151,13 +151,14 @@ class ImagePlanning(unittest.TestCase):
                                              'RAGNARSEC_REQUIRE_STAGE_EGRESS': '1'}), \
                  patch.object(ci, 'build_proxy_args', return_value=()), \
                  patch.object(ci, 'require_platforms_available'), \
-                 patch.object(ci, 'require_local_parent_builder'):
+                 patch.object(ci, 'require_local_parent_builder'), \
+                 patch.object(ci, 'image_layer_bytes', return_value=1024) as measure:
                 output = Path(tmp) / 'validated'
 
                 def fake(*args, capture=False):
                     if args[:3] == ('docker', 'image', 'inspect'):
-                        value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
-                        return subprocess.CompletedProcess([], 0, stdout=value)
+                        self.assertEqual(args[3], '--format={{.Id}}')
+                        return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
                     if args[:2] == ('trivy', 'image') and '--output' in args:
                         Path(args[args.index('--output') + 1]).write_text('{}')
                     return subprocess.CompletedProcess([], 0, stdout='')
@@ -167,6 +168,7 @@ class ImagePlanning(unittest.TestCase):
                 builds = [call.args for call in cmd.call_args_list
                           if call.args[:3] == ('docker', 'buildx', 'build')]
                 self.assertEqual(len(builds), 1)
+                measure.assert_called_once_with(builds[0][builds[0].index('-t') + 1], platform, output)
                 self.assertEqual(builds[0][builds[0].index('--platform') + 1], platform)
                 self.assertIn('--provenance=false', builds[0])
                 self.assertIn('--sbom=false', builds[0])
@@ -401,13 +403,13 @@ class VexPolicy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
              patch.object(ci, 'require_platforms_available'), \
-             patch.object(ci, 'require_local_parent_builder'):
+             patch.object(ci, 'require_local_parent_builder'), \
+             patch.object(ci, 'image_layer_bytes', return_value=1024):
             output = Path(tmp) / 'validated'
 
             def fake(*args, capture=False):
                 if args[:3] == ('docker', 'image', 'inspect'):
-                    value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
-                    return subprocess.CompletedProcess([], 0, stdout=value)
+                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
                 if args[:2] == ('trivy', 'image') and '--output' in args:
                     Path(args[args.index('--output') + 1]).write_text('{}')
                 return subprocess.CompletedProcess([], 0, stdout='')
@@ -781,6 +783,7 @@ class JenkinsBoundaries(unittest.TestCase):
         for branch_name, target, tip, branch in (
             ('sync/development-to-staging-native-arm64-trivy-workspace-tmp', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/development-to-staging-native-nginx-118', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-nginx-budget', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
