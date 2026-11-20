@@ -48,9 +48,11 @@ unreviewed runtime or use scanner exclusions for deleted fixtures.
 ## Controls and evidence
 
 Run the complete image Trivy gate and structure/functional tests on AMD64
-and native ARM64 using the exact PR commit. Before promoting, demonstrate
-persisted state migration and restore, scheduled renewal, and SBOM coverage
-for compiled/copied components. Publish only by separate approval with
+and native ARM64 using the exact PR commit. CI adds exact image file hashes
+and source metadata for the compiled/copied binaries in `runtime-components.json`
+to Trivy's package SBOM; this does not change what the scanner covers.
+Before promoting, demonstrate persisted state migration and restore and
+scheduled renewal. Publish only by separate approval with
 verified digest, signature, and SBOM; applying to any host is separate.
 
 No built-image pass is claimed by this recipe or its documentation.
