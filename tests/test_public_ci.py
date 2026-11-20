@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -7,6 +8,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 # Publication subprocesses are mocked here; the key gate has separate tests.
@@ -25,6 +27,44 @@ def load(name):
 ci, install = load('image_ci'), load('install_ci_tools')
 policy = load('image_policy')
 
+class ImageSizeBudget(unittest.TestCase):
+    def archive(self, path, layer, *, compressed, diff_id=None, arch='arm64'):
+        digest = diff_id or 'sha256:' + hashlib.sha256(layer).hexdigest()
+        manifest = [{'Config': 'config.json', 'Layers': ['layer.tar']}]
+        config = {'os': 'linux', 'architecture': arch,
+                  'rootfs': {'type': 'layers', 'diff_ids': [digest]}}
+        with tarfile.open(path, 'w') as tar:
+            for name, data in (
+                ('manifest.json', json.dumps(manifest).encode()),
+                ('config.json', json.dumps(config).encode()),
+                ('layer.tar', gzip.compress(layer) if compressed else layer),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                tar.addfile(member, io.BytesIO(data))
+
+    def test_same_layer_bytes_for_compressed_and_plain_exports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'image.tar'
+            layer = b'layer contents' * 8192
+            for compressed in (False, True):
+                with self.subTest(compressed=compressed):
+                    self.archive(path, layer, compressed=compressed)
+                    with path.open('rb') as f:
+                        self.assertEqual(ci.archive_layer_bytes(f, 'linux/arm64'), len(layer))
+
+    def test_rejects_mismatched_image_platform_or_layer_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'image.tar'
+            for options, error in (
+                ({'arch': 'amd64'}, 'budget-image-platform-mismatch'),
+                ({'diff_id': 'sha256:' + '0' * 64}, 'budget-layer-digest-mismatch'),
+            ):
+                with self.subTest(error=error):
+                    self.archive(path, b'layer', compressed=True, **options)
+                    with path.open('rb') as f, self.assertRaisesRegex(ValueError, error):
+                        ci.archive_layer_bytes(f, 'linux/arm64')
+
 class ImagePlanning(unittest.TestCase):
     def test_foreign_platform_uses_qemu_registration_name(self):
         with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
@@ -32,13 +72,13 @@ class ImagePlanning(unittest.TestCase):
                           side_effect=lambda path: path.name == 'qemu-aarch64'):
             ci.require_platforms_available(['linux/arm64'])
 
-    def test_arm64_ci_host_is_rejected_even_for_native_target(self):
-        for host in ('aarch64', 'arm64'):
-            with self.subTest(host=host), \
-                 patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': host})()), \
-                 patch.object(ci.Path, 'exists', side_effect=AssertionError('binfmt checked')):
-                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:' + host):
-                    ci.require_platforms_available(['linux/arm64'])
+    def test_aarch64_uses_native_platform_without_binfmt(self):
+        with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+             patch.object(ci.Path, 'exists', side_effect=AssertionError('binfmt checked')):
+            ci.require_platforms_available(['linux/arm64'])
+            for targets in (['linux/amd64'], ['linux/arm64', 'linux/amd64']):
+                with self.assertRaisesRegex(ValueError, 'native-arm64-runner-requires-linux-arm64'):
+                    ci.require_platforms_available(targets)
 
     def test_foreign_platform_without_handler_fails(self):
         with patch.object(ci.os, 'uname', return_value=type('Uname', (), {'machine': 'x86_64'})()), \
@@ -107,15 +147,18 @@ class ImagePlanning(unittest.TestCase):
     def test_validation_builds_single_platform_manifests_without_buildx_attestations(self):
         for platform in ('linux/amd64', 'linux/arm64'):
             with self.subTest(platform=platform), tempfile.TemporaryDirectory() as tmp, \
-                 patch.dict(ci.os.environ, {'PLATFORMS': platform}), \
+                 patch.dict(ci.os.environ, {'PLATFORMS': platform,
+                                             'RAGNARSEC_REQUIRE_STAGE_EGRESS': '1'}), \
+                 patch.object(ci, 'build_proxy_args', return_value=()), \
                  patch.object(ci, 'require_platforms_available'), \
-                 patch.object(ci, 'require_local_parent_builder'):
+                 patch.object(ci, 'require_local_parent_builder'), \
+                 patch.object(ci, 'image_layer_bytes', return_value=1024) as measure:
                 output = Path(tmp) / 'validated'
 
                 def fake(*args, capture=False):
                     if args[:3] == ('docker', 'image', 'inspect'):
-                        value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
-                        return subprocess.CompletedProcess([], 0, stdout=value)
+                        self.assertEqual(args[3], '--format={{.Id}}')
+                        return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
                     if args[:2] == ('trivy', 'image') and '--output' in args:
                         Path(args[args.index('--output') + 1]).write_text('{}')
                     return subprocess.CompletedProcess([], 0, stdout='')
@@ -125,11 +168,19 @@ class ImagePlanning(unittest.TestCase):
                 builds = [call.args for call in cmd.call_args_list
                           if call.args[:3] == ('docker', 'buildx', 'build')]
                 self.assertEqual(len(builds), 1)
+                measure.assert_called_once_with(builds[0][builds[0].index('-t') + 1], platform, output)
                 self.assertEqual(builds[0][builds[0].index('--platform') + 1], platform)
                 self.assertIn('--provenance=false', builds[0])
                 self.assertIn('--sbom=false', builds[0])
                 scans = [call.args for call in cmd.call_args_list
                           if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
+                trivy_commands = [call.args for call in cmd.call_args_list
+                                  if call.args[:2] == ('trivy', 'image')]
+                self.assertEqual(len(trivy_commands), 3)
+                for args in trivy_commands:
+                    self.assertIn('--java-db-repository', args)
+                    self.assertEqual(args[args.index('--java-db-repository') + 1],
+                                     'ghcr.io/aquasecurity/trivy-java-db:1')
                 self.assertEqual(len(scans), 1)
                 self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
                 structure_tests = [call.args for call in cmd.call_args_list
@@ -163,6 +214,7 @@ class ImagePlanning(unittest.TestCase):
                     else:
                         ci.require_base_min_inventory(sbom)
 
+    @patch.object(ci.os, 'uname', lambda: SimpleNamespace(machine='x86_64'))
     def test_failed_validation_never_writes_success_receipt(self):
         env = {'PLATFORMS': 'linux/amd64'}
         with tempfile.TemporaryDirectory() as tmp, patch.dict(ci.os.environ, env),                 patch.object(ci, 'command', side_effect=subprocess.CalledProcessError(1, 'hadolint')):
@@ -180,6 +232,7 @@ class ImagePlanning(unittest.TestCase):
                 'platform': platform, 'id': image_id, 'sbom': 'sbom.json',
                 'sbom_sha256': hashlib.sha256(b'{}').hexdigest()}
 
+    @patch.object(ci.os, 'uname', lambda: SimpleNamespace(machine='x86_64'))
     def test_publication_rejects_receipt_with_wrong_tag_or_repository_before_push(self):
         repository = ci.REGISTRY + 'ragnarsec-base'
         for ref, tag in (
@@ -208,6 +261,7 @@ class ImagePlanning(unittest.TestCase):
                         ci.publish('ragnarsec-base', tag, p)
                     self.assertFalse(any(call.args[:2] == ('docker', 'push') for call in cmd.call_args_list))
 
+    @patch.object(ci.os, 'uname', lambda: SimpleNamespace(machine='x86_64'))
     def test_tampered_image_never_pushed(self):
         repository = ci.REGISTRY + 'ragnarsec-base'
         with tempfile.TemporaryDirectory() as tmp:
@@ -231,6 +285,7 @@ class ImagePlanning(unittest.TestCase):
                     ci.publish('ragnarsec-base', 'test', p)
                 self.assertFalse(any(c.args[:2] == ('docker', 'push') for c in cmd.call_args_list))
 
+    @patch.object(ci.os, 'uname', lambda: SimpleNamespace(machine='x86_64'))
     def test_publication_promotes_validated_images_and_signs_platforms(self):
         repository = ci.REGISTRY + 'ragnarsec-base'
         index_digest = 'sha256:' + 'a' * 64
@@ -348,13 +403,13 @@ class VexPolicy(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.dict(ci.os.environ, {'PLATFORMS': 'linux/amd64'}), \
              patch.object(ci, 'require_platforms_available'), \
-             patch.object(ci, 'require_local_parent_builder'):
+             patch.object(ci, 'require_local_parent_builder'), \
+             patch.object(ci, 'image_layer_bytes', return_value=1024):
             output = Path(tmp) / 'validated'
 
             def fake(*args, capture=False):
                 if args[:3] == ('docker', 'image', 'inspect'):
-                    value = '1024' if args[3] == '--format={{.Size}}' else 'sha256:local-image-id'
-                    return subprocess.CompletedProcess([], 0, stdout=value)
+                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
                 if args[:2] == ('trivy', 'image') and '--output' in args:
                     Path(args[args.index('--output') + 1]).write_text('{}')
                 return subprocess.CompletedProcess([], 0, stdout='')
@@ -389,6 +444,7 @@ class VexPolicy(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ci.vex_path(name)
 
+    @patch.object(ci.os, 'uname', lambda: SimpleNamespace(machine='x86_64'))
     def test_publish_rejects_changed_vex_before_push(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp)
@@ -606,13 +662,24 @@ class DockerfilePolicy(unittest.TestCase):
             self.assertNotIn('root-final-user', policy.check_dockerfile(dockerfile))
 
 class ToolCustody(unittest.TestCase):
-    def test_installer_rejects_arm64_before_directory_or_download(self):
+    def test_native_arm64_uses_pinned_arm64_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / 'tools'
             with patch('sys.argv', ['install_ci_tools.py', str(destination)]), \
-                 patch('os.uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+                 patch.object(install.os, 'uname', return_value=type('Uname', (), {'machine': 'aarch64'})()), \
+                 patch.object(install.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong')) as download:
+                with self.assertRaisesRegex(ValueError, 'tool-checksum-mismatch'):
+                    install.main()
+                self.assertTrue(download.call_args.args[0].endswith('/container-structure-test-linux-arm64'))
+                self.assertEqual(list(destination.iterdir()), [])
+
+    def test_installer_rejects_unknown_arch_before_directory_or_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / 'tools'
+            with patch('sys.argv', ['install_ci_tools.py', str(destination)]), \
+                 patch('os.uname', return_value=type('Uname', (), {'machine': 'riscv64'})()), \
                  patch.object(install.urllib.request, 'urlopen', side_effect=AssertionError('download attempted')):
-                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:aarch64'):
+                with self.assertRaisesRegex(ValueError, 'unsupported-ci-host-arch:riscv64'):
                     install.main()
             self.assertFalse(destination.exists())
 
@@ -697,10 +764,31 @@ class JenkinsBoundaries(unittest.TestCase):
         post=self.pipeline.split('post {',1)[1]
         self.assertIn('rm -rf "$CI_ROOT"',post)
 
-    def test_jenkins_rejects_non_amd64_host_before_tool_installation(self):
+    def test_jenkins_checks_selected_runner_before_tool_installation(self):
         tools = self.pipeline.split("stage('Tools')", 1)[1].split("stage('Secret scan')", 1)[0]
-        self.assertIn('test "$(uname -m)" = "x86_64"', tools)
-        self.assertLess(tools.index('test "$(uname -m)" = "x86_64"'),
-                        tools.index('install_ci_tools.py'))
+        guard = 'true:aarch64:linux/arm64|false:x86_64:*'
+        self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
+        self.assertIn("params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'", self.pipeline)
+
+    def test_jenkins_exports_the_declared_image_parameter(self):
+        environment = self.pipeline.split('  environment {', 1)[1].split('  stages {', 1)[0]
+        self.assertIn('IMAGE = "${params.IMAGE ?: \'\'}"', environment)
+
+    def test_native_arm64_sync_is_exact_and_expires_when_target_moves(self):
+        provenance = self.pipeline.split("stage('Provenance')", 1)[1].split("stage('Contract')", 1)[0]
+        self.assertIn('require_one_time_sync "$@"', provenance)
+        self.assertIn('git rev-parse "origin/${base}")" = "$expected_tip"', provenance)
+        self.assertIn('git rev-parse "origin/${source_branch}^{tree}"', provenance)
+        self.assertIn('git rev-list --parents -n 1 "$1")" = "$1 $3"', provenance)
+        for branch_name, target, tip, branch in (
+            ('sync/development-to-staging-native-arm64-trivy-workspace-tmp', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-nginx-118', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-nginx-budget', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
+        ):
+            block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
+            self.assertIn(f'require_linear_arm64_sync "$head" {target}', block)
+            self.assertIn(f'{tip} {branch}', block)
+
 
 if __name__=='__main__':unittest.main()

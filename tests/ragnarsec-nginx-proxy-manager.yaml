@@ -1,6 +1,5 @@
 schemaVersion: 2.0.0
 metadataTest:
-  user: 'root'
   exposedPorts: ["80", "81", "443"]
 fileExistenceTests:
   - name: 'Application directory'
@@ -13,6 +12,13 @@ fileExistenceTests:
     path: '/usr/sbin/nginx'
     shouldExist: true
 commandTests:
+  # The upstream image leaves Config.User empty; Docker then starts as UID 0.
+  # Test the effective default required by s6, not a metadata spelling.
+  - name: 'Upstream initialization default UID'
+    command: 'id'
+    args: ['-u']
+    expectedOutput: ['^0[[:space:]]*$']
+    exitCode: 0
   - name: 'Nginx version'
     command: 'sh'
     args: ['-c', 'nginx -v']

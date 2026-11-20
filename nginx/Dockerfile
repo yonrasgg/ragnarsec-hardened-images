@@ -20,8 +20,8 @@ USER root
 # Pin runtime additions to versions recorded in versions.json. Base updates are
 # reviewed separately instead of upgrading the entire inherited filesystem.
 RUN apk add --no-cache \
-    nginx=1.30.6-r0 \
-    openssl=3.5.9-r0 \
+    nginx=1.30.7-r0 \
+    openssl=3.5.9-r1 \
     pcre2=10.49-r0
 
 # Configure Nginx
