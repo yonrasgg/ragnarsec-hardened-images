@@ -108,7 +108,9 @@ class ImagePlanning(unittest.TestCase):
     def test_validation_builds_single_platform_manifests_without_buildx_attestations(self):
         for platform in ('linux/amd64', 'linux/arm64'):
             with self.subTest(platform=platform), tempfile.TemporaryDirectory() as tmp, \
-                 patch.dict(ci.os.environ, {'PLATFORMS': platform}), \
+                 patch.dict(ci.os.environ, {'PLATFORMS': platform,
+                                             'RAGNARSEC_REQUIRE_STAGE_EGRESS': '1'}), \
+                 patch.object(ci, 'build_proxy_args', return_value=()), \
                  patch.object(ci, 'require_platforms_available'), \
                  patch.object(ci, 'require_local_parent_builder'):
                 output = Path(tmp) / 'validated'
@@ -131,6 +133,13 @@ class ImagePlanning(unittest.TestCase):
                 self.assertIn('--sbom=false', builds[0])
                 scans = [call.args for call in cmd.call_args_list
                           if call.args[:2] == ('trivy', 'image') and '--severity' in call.args]
+                trivy_commands = [call.args for call in cmd.call_args_list
+                                  if call.args[:2] == ('trivy', 'image')]
+                self.assertEqual(len(trivy_commands), 3)
+                for args in trivy_commands:
+                    self.assertIn('--java-db-repository', args)
+                    self.assertEqual(args[args.index('--java-db-repository') + 1],
+                                     'ghcr.io/aquasecurity/trivy-java-db:1')
                 self.assertEqual(len(scans), 1)
                 self.assertEqual(scans[0][scans[0].index('--exit-on-eol') + 1], '1')
                 structure_tests = [call.args for call in cmd.call_args_list
@@ -727,7 +736,7 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('git rev-parse "origin/${source_branch}^{tree}"', provenance)
         self.assertIn('git rev-list --parents -n 1 "$1")" = "$1 $3"', provenance)
         for branch_name, target, tip, branch in (
-            ('sync/development-to-staging-native-arm64-npm-structure', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
+            ('sync/development-to-staging-native-arm64-trivy-java-db', 'staging', 'e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e', 'development'),
             ('sync/staging-to-main-native-arm64-106', 'main', '32ba41c1ec403776cb4a8d8df3d184205f6020d0', 'staging'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch_name}" ]; then', 1)[1].split('elif', 1)[0]
