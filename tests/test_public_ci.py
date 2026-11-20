@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -25,6 +26,44 @@ def load(name):
     return module
 ci, install = load('image_ci'), load('install_ci_tools')
 policy = load('image_policy')
+
+class ImageSizeBudget(unittest.TestCase):
+    def archive(self, path, layer, *, compressed, diff_id=None, arch='arm64'):
+        digest = diff_id or 'sha256:' + hashlib.sha256(layer).hexdigest()
+        manifest = [{'Config': 'config.json', 'Layers': ['layer.tar']}]
+        config = {'os': 'linux', 'architecture': arch,
+                  'rootfs': {'type': 'layers', 'diff_ids': [digest]}}
+        with tarfile.open(path, 'w') as tar:
+            for name, data in (
+                ('manifest.json', json.dumps(manifest).encode()),
+                ('config.json', json.dumps(config).encode()),
+                ('layer.tar', gzip.compress(layer) if compressed else layer),
+            ):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                tar.addfile(member, io.BytesIO(data))
+
+    def test_same_layer_bytes_for_compressed_and_plain_exports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'image.tar'
+            layer = b'layer contents' * 8192
+            for compressed in (False, True):
+                with self.subTest(compressed=compressed):
+                    self.archive(path, layer, compressed=compressed)
+                    with path.open('rb') as f:
+                        self.assertEqual(ci.archive_layer_bytes(f, 'linux/arm64'), len(layer))
+
+    def test_rejects_mismatched_image_platform_or_layer_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'image.tar'
+            for options, error in (
+                ({'arch': 'amd64'}, 'budget-image-platform-mismatch'),
+                ({'diff_id': 'sha256:' + '0' * 64}, 'budget-layer-digest-mismatch'),
+            ):
+                with self.subTest(error=error):
+                    self.archive(path, b'layer', compressed=True, **options)
+                    with path.open('rb') as f, self.assertRaisesRegex(ValueError, error):
+                        ci.archive_layer_bytes(f, 'linux/arm64')
 
 class ImagePlanning(unittest.TestCase):
     def test_foreign_platform_uses_qemu_registration_name(self):
