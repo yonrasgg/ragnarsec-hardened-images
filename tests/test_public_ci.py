@@ -511,6 +511,11 @@ class VexPolicy(unittest.TestCase):
 
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_npm_resolver_is_readable_independent_of_the_checkout_umask(self):
+        dockerfile = (ROOT / 'nginx-proxy-manager' / 'Dockerfile').read_text()
+        self.assertIn('COPY --chmod=0444 render-resolver.cjs /usr/local/lib/npm-render-resolver.cjs',
+                      dockerfile.splitlines())
+
     def test_shared_base_uses_supported_alpine_pin_and_matching_manifest(self):
         base = (ROOT / 'base' / 'Dockerfile').read_text()
         versions = json.loads((ROOT / 'versions.json').read_text())

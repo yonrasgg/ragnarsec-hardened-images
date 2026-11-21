@@ -41,6 +41,10 @@ commandTests:
     args: ['-u']
     expectedOutput: ['^1000[[:space:]]*$']
     exitCode: 0
+  - name: 'Resolver helper is root-owned and readable as UID 1000'
+    command: '/bin/busybox'
+    args: ['sh', '-ec', 'test "$(id -u)" = 1000; f=/usr/local/lib/npm-render-resolver.cjs; test -r "$f"; test "$(stat -c "%u:%g:%a" "$f")" = 0:0:444']
+    exitCode: 0
   - name: 'OpenResty version'
     command: 'nginx'
     args: ['-v']
