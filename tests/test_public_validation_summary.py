@@ -105,7 +105,7 @@ class ValidationSummary(unittest.TestCase):
 
     def test_jenkins_removes_summaries_in_stage_cleanup_after_archiving(self):
         pipeline = (ROOT / 'Jenkinsfile').read_text()
-        validate = pipeline.split("stage('Plan and validate')", 1)[1].split("stage('Publish')", 1)[0]
+        validate = pipeline.split("stage('Verify native handoff')", 1)[1].split("stage('Publish')", 1)[0]
         after_archive = validate.split('archiveArtifacts', 1)[1]
         self.assertIn('post {', after_archive)
         post = after_archive.split('post {', 1)[1]

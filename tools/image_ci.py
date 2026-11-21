@@ -493,29 +493,8 @@ def _inspect(ref):
     return repository + '@' + digest, per_platform
 
 
-def publish(selected, tag, output):
-    """Promote the validated per-platform images and assemble the index.
-
-    Nothing is rebuilt here: rebuilding would create bytes that were never
-    scanned or attested. The validated local images are pushed as-is, then an
-    index references their digests.
-    """
-    if os.environ.get('PUBLICATION_ENABLED') != 'true':
-        raise ValueError('publication-not-enabled')
-    from release_signing_guard import verify_signing_key
-    verify_signing_key(os.environ.get('COSIGN_KEY'))
-    key = os.environ.get('COSIGN_KEY')
-    if not key or not Path(key).is_file():
-        raise ValueError('signing-key-not-configured')
-    targets = platforms()
-    require_platforms_available(targets)
-    public = output / 'cosign.pub'
-    if public.exists():
-        public.unlink()
-    command('cosign', 'public-key', '--key', key, '--outfile', str(public))
-    if not public.is_file():
-        raise ValueError('public-key-not-derived')
-
+def verify_receipts(selected, tag, output, targets, *, inspect_images=True):
+    """Check exact plan coverage, input hashes and optional local image identity."""
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
     expected = sorted((i['name'], p, REGISTRY + i['name'] + ':' + tag + '-' + ALLOWED_PLATFORMS[p])
@@ -535,9 +514,33 @@ def publish(selected, tag, output):
             if (r['vex'] != expected or not path.is_file()
                     or hashlib.sha256(path.read_bytes()).hexdigest() != r.get('vex_sha256')):
                 raise ValueError('vex-changed')
-        actual = command('docker', 'image', 'inspect', '--format={{.Id}}', r['ref'], capture=True).stdout.strip()
-        if actual != r['id']:
-            raise ValueError('validated-image-changed')
+        if inspect_images:
+            actual = command('docker', 'image', 'inspect',
+                             '--format={{.Id}} {{.Os}}/{{.Architecture}}',
+                             r['ref'], capture=True).stdout.strip()
+            if actual != f"{r['id']} {r['platform']}":
+                raise ValueError('validated-image-changed')
+    return receipts
+
+
+def publish(selected, tag, output):
+    """Push only verified local images, without building or executing them."""
+    if os.environ.get('PUBLICATION_ENABLED') != 'true':
+        raise ValueError('publication-not-enabled')
+    from release_signing_guard import verify_signing_key
+    verify_signing_key(os.environ.get('COSIGN_KEY'))
+    key = os.environ.get('COSIGN_KEY')
+    if not key or not Path(key).is_file():
+        raise ValueError('signing-key-not-configured')
+    targets = platforms()
+    receipts = verify_receipts(selected, tag, output, targets)
+    images = plan(selected)
+    public = output / 'cosign.pub'
+    if public.exists():
+        public.unlink()
+    command('cosign', 'public-key', '--key', key, '--outfile', str(public))
+    if not public.is_file():
+        raise ValueError('public-key-not-derived')
 
     for image in images:
         refs = {}
