@@ -163,11 +163,105 @@ def require_local_parent_builder():
         raise ValueError('builder-must-use-docker-driver')
 
 
+def add_npm_runtime_components(image_id, sbom):
+    """Record compiled/copied binaries not attributed to APK or language packages."""
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id):
+        raise ValueError('invalid-npm-image-id')
+    spec = json.loads((ROOT / 'nginx-proxy-manager' / 'runtime-components.json').read_text())
+    paths = [component['path'] for component in spec]
+    if len(set(paths)) != len(paths) or not all(re.fullmatch(r'/[a-zA-Z0-9_/.-]+', p) for p in paths):
+        raise ValueError('invalid-npm-component-path')
+    output = command('docker', 'run', '--rm', '--pull', 'never', '--network', 'none', '--read-only',
+                     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--entrypoint',
+                     '/bin/busybox', image_id, 'sha256sum', *paths, capture=True).stdout
+    hashes = {}
+    for line in output.splitlines():
+        digest, path = line.split(maxsplit=1)
+        if not re.fullmatch(r'[0-9a-f]{64}', digest) or path not in paths or path in hashes:
+            raise ValueError('invalid-npm-component-hash')
+        hashes[path] = digest
+    if set(hashes) != set(paths):
+        raise ValueError('incomplete-npm-component-hashes')
+    document = json.loads(sbom.read_text())
+    components = document.setdefault('components', [])
+    root = document['metadata']['component']['bom-ref']
+    dependencies = document['dependencies']
+    root_node = next(node for node in dependencies if node['ref'] == root)
+    for component in spec:
+        if any(x.get('purl') == component['purl'] for x in components):
+            raise ValueError('duplicate-npm-runtime-purl:' + component['purl'])
+        filename = component['path']
+        bom_ref = 'ragnarsec:runtime:' + filename
+        components.append({**{k: component[k] for k in ('name', 'version', 'type', 'purl')},
+                           'bom-ref': bom_ref,
+                           'hashes': [{'alg': 'SHA-256', 'content': hashes[filename]}],
+                           'externalReferences': [{'type': 'website', 'url': component['source']}],
+                           'properties': [{'name': 'ragnarsec:image:path', 'value': filename}]})
+        root_node.setdefault('dependsOn', []).append(bom_ref)
+        dependencies.append({'ref': bom_ref, 'dependsOn': []})
+    sbom.write_text(json.dumps(document, indent=2) + '\n')
+
+
 def _build_args(image, tag, platform):
     return (*build_proxy_args(), '--build-arg', 'BASE_TAG=' + tag,
             '--build-arg', 'BUILD_DATE=' + os.environ.get('BUILD_DATE', '1970-01-01T00:00:00Z'),
             '--build-arg', 'VCS_REF=' + (os.environ.get('GIT_COMMIT') or os.environ.get('GITHUB_SHA') or 'local'),
               '-f', image['dockerfile'], image['context'])
+
+
+EGRESS_MANIFEST = ROOT / 'tools' / 'build-egress.json'
+_URL_HOST = re.compile(r'https://([a-z0-9.-]+\.[a-z]{2,})(?=[/:\s"\'`)]|$)', re.I)
+_CONTEXT_SUFFIXES = ('.sh', '.cjs', '.js', '.py', '.txt', '.patch')
+
+
+def build_egress_hosts(image):
+    """Hostnames a recipe's build may contact over HTTPS: URL literals in the Dockerfile and
+    its context scripts, plus implicit package sources inferred from base images and
+    package managers (declared in tools/build-egress.json ``implicit_by_base``)."""
+    manifest = json.loads(EGRESS_MANIFEST.read_text())
+    implicit = manifest.get('implicit_by_base', {})
+    dockerfile_path = ROOT / image['dockerfile']
+    dockerfile = dockerfile_path.read_text(errors='replace')
+    context = ROOT / image['context']
+    files = [dockerfile_path] + sorted(f for f in context.iterdir()
+                                       if f.is_file() and f.suffix in _CONTEXT_SUFFIXES)
+    hosts = set()
+    for f in files:
+        hosts.update(h.lower() for h in _URL_HOST.findall(f.read_text(errors='replace')))
+    bases = [b.lower() for b in re.findall(
+        r'^FROM\s+(?:docker\.io/)?(?:library/)?'
+        r'([a-z0-9][a-z0-9._/-]*(?::[a-z0-9_][a-z0-9_.-]*)?)', dockerfile, re.M | re.I)]
+    for base in bases:
+        if base.startswith('alpine'):
+            hosts.update(implicit.get('alpine', []))
+        if base.startswith(('debian', 'ubuntu')):
+            hosts.update(implicit.get('debian', []))
+        if re.match(r'node:.*-alpine', base):
+            hosts.update(implicit.get('node:*-alpine', []))
+    if re.search(r'\bapk\s+add\b', dockerfile):
+        hosts.update(implicit.get('alpine', []))
+    if re.search(r'\bapt-get\s+(?:update|install)\b', dockerfile):
+        hosts.update(implicit.get('debian', []))
+    if re.search(r'\byarn(?:\.js)?\s+install\b', dockerfile):
+        hosts.update(implicit.get('yarn', []))
+    if re.search(r'\bpip3?\b[^\n]*\binstall\b', dockerfile):
+        hosts.update(implicit.get('pip', []))
+    return sorted(hosts)
+
+
+def check_build_egress(images):
+    """Pre-flight for the build agents' egress proxy. Fails when any planned recipe needs a
+    host that tools/build-egress.json does not allow. Never widens egress by itself: the
+    manifest and the proxy allowlist are changed together under CHG-CI-003."""
+    manifest = json.loads(EGRESS_MANIFEST.read_text())
+    allowed = {h.lower() for h in manifest['allowed_hosts']}
+    if any(not re.fullmatch(r'[a-z0-9.-]+\.[a-z]{2,}', h) or '*' in h for h in allowed):
+        raise ValueError('build-egress-manifest-requires-exact-hosts')
+    missing = {image['name']: sorted(set(build_egress_hosts(image)) - allowed) for image in images}
+    missing = {k: v for k, v in missing.items() if v}
+    if missing:
+        raise ValueError('build-egress-not-allowlisted:' + json.dumps(missing, sort_keys=True))
+    return sorted(allowed)
 
 
 def staging_egress_required():
@@ -359,6 +453,8 @@ def validate(selected, tag, output):
                     raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,
                     '--image', ref, '--config', str(test))
+            if name == 'ragnarsec-nginx-proxy-manager':
+                command('bash', str(ROOT / 'nginx-proxy-manager' / 'test-runtime.sh'), image_id)
             scan = ['trivy', 'image', *db_args, *trivy_checks_args(),
                     '--scanners', 'vuln,secret,misconfig', '--severity', 'HIGH,CRITICAL',
                     '--exit-code', '1', '--exit-on-eol', '1', '--image-config-scanners',
@@ -371,6 +467,8 @@ def validate(selected, tag, output):
             command('trivy', 'image', *db_args, '--format', 'cyclonedx', '--output', str(sbom), ref)
             if name == 'ragnarsec-base-min':
                 require_base_min_inventory(sbom)
+            if name == 'ragnarsec-nginx-proxy-manager':
+                add_npm_runtime_components(image_id, sbom)
             receipts.append({'ref': ref, 'name': name, 'platform': platform, 'id': image_id,
                              'sbom': sbom.name,
                              'sbom_sha256': hashlib.sha256(sbom.read_bytes()).hexdigest(),
@@ -395,29 +493,8 @@ def _inspect(ref):
     return repository + '@' + digest, per_platform
 
 
-def publish(selected, tag, output):
-    """Promote the validated per-platform images and assemble the index.
-
-    Nothing is rebuilt here: rebuilding would create bytes that were never
-    scanned or attested. The validated local images are pushed as-is, then an
-    index references their digests.
-    """
-    if os.environ.get('PUBLICATION_ENABLED') != 'true':
-        raise ValueError('publication-not-enabled')
-    from release_signing_guard import verify_signing_key
-    verify_signing_key(os.environ.get('COSIGN_KEY'))
-    key = os.environ.get('COSIGN_KEY')
-    if not key or not Path(key).is_file():
-        raise ValueError('signing-key-not-configured')
-    targets = platforms()
-    require_platforms_available(targets)
-    public = output / 'cosign.pub'
-    if public.exists():
-        public.unlink()
-    command('cosign', 'public-key', '--key', key, '--outfile', str(public))
-    if not public.is_file():
-        raise ValueError('public-key-not-derived')
-
+def verify_receipts(selected, tag, output, targets, *, inspect_images=True):
+    """Check exact plan coverage, input hashes and optional local image identity."""
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
     expected = sorted((i['name'], p, REGISTRY + i['name'] + ':' + tag + '-' + ALLOWED_PLATFORMS[p])
@@ -437,9 +514,33 @@ def publish(selected, tag, output):
             if (r['vex'] != expected or not path.is_file()
                     or hashlib.sha256(path.read_bytes()).hexdigest() != r.get('vex_sha256')):
                 raise ValueError('vex-changed')
-        actual = command('docker', 'image', 'inspect', '--format={{.Id}}', r['ref'], capture=True).stdout.strip()
-        if actual != r['id']:
-            raise ValueError('validated-image-changed')
+        if inspect_images:
+            actual = command('docker', 'image', 'inspect',
+                             '--format={{.Id}} {{.Os}}/{{.Architecture}}',
+                             r['ref'], capture=True).stdout.strip()
+            if actual != f"{r['id']} {r['platform']}":
+                raise ValueError('validated-image-changed')
+    return receipts
+
+
+def publish(selected, tag, output):
+    """Push only verified local images, without building or executing them."""
+    if os.environ.get('PUBLICATION_ENABLED') != 'true':
+        raise ValueError('publication-not-enabled')
+    from release_signing_guard import verify_signing_key
+    verify_signing_key(os.environ.get('COSIGN_KEY'))
+    key = os.environ.get('COSIGN_KEY')
+    if not key or not Path(key).is_file():
+        raise ValueError('signing-key-not-configured')
+    targets = platforms()
+    receipts = verify_receipts(selected, tag, output, targets)
+    images = plan(selected)
+    public = output / 'cosign.pub'
+    if public.exists():
+        public.unlink()
+    command('cosign', 'public-key', '--key', key, '--outfile', str(public))
+    if not public.is_file():
+        raise ValueError('public-key-not-derived')
 
     for image in images:
         refs = {}
@@ -489,7 +590,11 @@ def main():
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.action == 'plan':
-        print(json.dumps(plan(args.image)))
+        ordered = plan(args.image)
+        # Pre-flight for the build agents' egress proxy: every host a recipe may contact
+        # must be declared in tools/build-egress.json, or the plan fails before any build.
+        check_build_egress(ordered)
+        print(json.dumps(ordered))
     else:
         if args.output is None:
             parser.error('--output required')

@@ -14,8 +14,7 @@ import image_ci
 
 class OciRevision(unittest.TestCase):
     def test_jenkins_exports_checked_out_sha_before_native_validation(self):
-        stage = (ROOT / "Jenkinsfile").read_text().split("stage('Plan and validate')", 1)[1]
-        stage = stage.split("stage('Publish')", 1)[0]
+        stage = (ROOT / "Jenkinsfile").read_text().split("def validatePlatform()", 1)[1]
         self.assertLess(stage.index('export GIT_COMMIT="$(git rev-parse --verify HEAD)"'),
                         stage.index("tools/image_ci.py validate"))
 
