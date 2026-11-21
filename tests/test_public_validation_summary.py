@@ -82,6 +82,36 @@ class ValidationSummary(unittest.TestCase):
             s = vs.build_summary(out, 'Total: 5 (HIGH: 3, CRITICAL: 2)\n', 'abc123def456789', 'staging', budgets={})
             self.assertIn('**3 / 2** over 1 result tables', vs.render_markdown(s))
 
+    def test_untracked_summaries_with_internal_run_url_remain_guard_findings(self):
+        guard = load('publication_guard')
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            reports = workspace / 'ci-summary'
+            reports.mkdir()
+            url = 'https://' + '.'.join(('jenkins', 'internal')) + '/job/example/1/'
+            s = vs.build_summary(fixture(tmp), LOG, 'abc123def456789', 'staging',
+                                 run_url=url, budgets={})
+            (reports / 'summary.md').write_text(vs.render_markdown(s))
+            (reports / 'summary.json').write_text(json.dumps(s))
+            seen = {row['path'] for row in guard.scan_tree(workspace)['findings']
+                    if row['rule'] == 'internal-domain'}
+            self.assertEqual(seen, {'ci-summary/summary.md', 'ci-summary/summary.json'})
+
+    def test_jenkins_removes_stale_summaries_before_source_scan(self):
+        pipeline = (ROOT / 'Jenkinsfile').read_text()
+        contract = pipeline.split("stage('Contract')", 1)[1].split("stage('Tools')", 1)[0]
+        before_scan = contract.split('python3 tools/publication_guard.py', 1)[0]
+        self.assertIn("dir('ci-summary') { deleteDir() }", before_scan)
+
+    def test_jenkins_removes_summaries_in_stage_cleanup_after_archiving(self):
+        pipeline = (ROOT / 'Jenkinsfile').read_text()
+        validate = pipeline.split("stage('Plan and validate')", 1)[1].split("stage('Publish')", 1)[0]
+        after_archive = validate.split('archiveArtifacts', 1)[1]
+        self.assertIn('post {', after_archive)
+        post = after_archive.split('post {', 1)[1]
+        self.assertIn('cleanup {', post)
+        self.assertIn("dir('ci-summary') { deleteDir() }", post.split('cleanup {', 1)[1])
+
 
 if __name__ == '__main__':
     unittest.main()

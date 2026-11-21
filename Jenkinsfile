@@ -233,6 +233,8 @@ pipeline {
 
     stage('Contract') {
       steps {
+        // Reused workspaces can retain a report from an interrupted run.
+        dir('ci-summary') { deleteDir() }
         sh '''
           set -euo pipefail
           test -n "${WORKSPACE_TMP:-}" || {
@@ -321,6 +323,12 @@ GITLEAKS_CONFIG
         '''
         archiveArtifacts artifacts: 'ci-summary/summary.md, ci-summary/summary.json', allowEmptyArchive: true
       }
+      post {
+        cleanup {
+          // Do not leave BUILD_URL in the checkout, even if archiving failed.
+          dir('ci-summary') { deleteDir() }
+        }
+      }
     }
 
     stage('Publish') {
@@ -367,13 +375,6 @@ GITLEAKS_CONFIG
         # and the derived public key. The next build starts from an empty root.
         if [ -n "${CI_ROOT:-}" ]; then
           rm -rf "$CI_ROOT"
-        fi
-        # The reviewer summary embeds BUILD_URL. If Jenkins reuses this
-        # workspace, a leftover report is scanned by publication_guard in the
-        # next build before validation can regenerate it. It was archived
-        # already; remove it on every outcome, including failures.
-        if [ -n "${WORKSPACE:-}" ] && [ -d "$WORKSPACE/ci-summary" ]; then
-          rm -rf "$WORKSPACE/ci-summary"
         fi
       '''
     }
