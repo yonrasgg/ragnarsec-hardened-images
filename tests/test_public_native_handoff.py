@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,13 @@ class NativeHandoffPipeline(unittest.TestCase):
     def test_only_one_amd64_agent_is_requested(self):
         self.assertEqual(self.pipeline.count("agent { label 'ragnarsec-linux' }"), 1)
         self.assertEqual(self.pipeline.count("agent { label 'ragnarsec-linux-arm64' }"), 1)
+
+    def test_plan_is_accepted_by_the_jenkins_shell(self):
+        plan = self.pipeline.split("stage('Plan')", 1)[1].split("stage('Validate')", 1)[0]
+        block = re.search(r"\bsh\s+'''(.*?)'''", plan, re.S)
+        self.assertIsNotNone(block)
+        result = subprocess.run(['/bin/sh', '-n'], input=block[1], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_reused_workspaces_clean_review_reports_before_source_scan(self):
         contract = self.pipeline.split("stage('Contract')", 1)[1]

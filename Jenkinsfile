@@ -325,7 +325,7 @@ GITLEAKS_CONFIG
               base=HEAD
             fi
             selection="$(python3 tools/select_image.py --image "$IMAGE" --base "$base" --head HEAD)"
-            resolved="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])' <<<"$selection")"
+            resolved="$(printf '%s' "$selection" | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
             echo "Resolved image: ${resolved}"
             printf '%s\\n' "$resolved" > "$CI_ROOT/image"
             python3 tools/image_ci.py plan --image "$resolved"
