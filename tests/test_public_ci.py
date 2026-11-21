@@ -516,6 +516,14 @@ class DockerfilePolicy(unittest.TestCase):
         self.assertIn('COPY --chmod=0444 render-resolver.cjs /usr/local/lib/npm-render-resolver.cjs',
                       dockerfile.splitlines())
 
+    def test_npm_resolver_structure_check_does_not_expand_shell_variables(self):
+        config = (ROOT / 'tests' / 'ragnarsec-nginx-proxy-manager.yaml').read_text()
+        check = config.split("  - name: 'Resolver helper is root-owned and readable as UID 1000'", 1)[1]
+        check = check.split('\n  - name:', 1)[0]
+        # container-structure-test substitutes image environment variables in
+        # every argument before starting the command, not shell-local values.
+        self.assertNotRegex(check, r'\$(?:[A-Za-z_][A-Za-z_0-9]*|\{)')
+
     def test_shared_base_uses_supported_alpine_pin_and_matching_manifest(self):
         base = (ROOT / 'base' / 'Dockerfile').read_text()
         versions = json.loads((ROOT / 'versions.json').read_text())
