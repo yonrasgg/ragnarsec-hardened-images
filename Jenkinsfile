@@ -393,7 +393,9 @@ GITLEAKS_CONFIG
         dir("${env.CI_ROOT}/arm64") { unstash 'validation-arm64' }
         sh '''
           set -euo pipefail
-          python3 tools/ci_docker_endpoint.py
+          # The same AMD64 node already proved its rootless daemon. After
+          # Buildx, verify the now-existing private config instead of requiring absence.
+          python3 tools/ci_docker_endpoint.py --config-only
           python3 tools/validation_handoff.py assemble --image "$CI_VALIDATION_IMAGE" \
             --tag "$CI_IMAGE_TAG" --revision "$CI_SOURCE_REVISION" --directory "$CI_ROOT" \
             --output "$VALIDATION_OUTPUT"
@@ -492,6 +494,7 @@ def validatePlatform() {
       mkdir -m 700 "$CI_ROOT"
     fi
     python3 tools/ci_docker_endpoint.py
+    mkdir -m 700 "$DOCKER_CONFIG"
     if [ "$CI_RUNNER_ARCH" = arm64 ]; then
       python3 tools/install_ci_tools.py "$CI_TOOLS"
     fi

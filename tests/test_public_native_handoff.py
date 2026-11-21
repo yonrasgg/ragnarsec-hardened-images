@@ -50,6 +50,14 @@ class NativeHandoffPipeline(unittest.TestCase):
         self.assertNotIn('require_platforms_available', publish)
         self.assertRegex(publish, r'\bverify_receipts\(')
 
+    def test_handoff_checks_private_docker_config_after_validation(self):
+        native = self.pipeline.split('def validatePlatform()', 1)[1]
+        self.assertIn('mkdir -m 700 "$DOCKER_CONFIG"', native)
+        self.assertLess(native.index('tools/ci_docker_endpoint.py'),
+                        native.index('mkdir -m 700 "$DOCKER_CONFIG"'))
+        import_stage = self.pipeline.split("stage('Verify native handoff')", 1)[1].split("stage('Publish')", 1)[0]
+        self.assertIn('tools/ci_docker_endpoint.py --config-only', import_stage)
+
 
 class NativeHandoffReceipts(unittest.TestCase):
     image = 'ragnarsec-base-min'
