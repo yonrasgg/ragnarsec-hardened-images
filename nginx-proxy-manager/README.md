@@ -37,7 +37,13 @@ short key ID. A valid signature with a pinned key is not that confirmation.
   supports non-root binds without additional capabilities.
 - The admin proxy binds to container loopback port 8181; the Node API is also
   loopback-only. A host `ports` mapping is not an admin access design. No
-  external listener, resolver change, or release rollout is authorized here.
+  external listener or release rollout is authorized here.
+- For hostname proxy targets, startup writes an Nginx resolver include under
+  `/tmp/npm` using the IPv4 nameservers from the container's `/etc/resolv.conf`.
+  This supports Docker service names on a shared user-defined network without
+  writing to the image filesystem or selecting public DNS. With no IPv4
+  nameserver the include is empty; hostname targets then require DNS configured
+  by the container runtime.
 - This candidate targets IPv4 and ACME HTTP-01. IPv6, automatic external
   IP-range downloads, and writable runtime installation of DNS plugins are
   outside this contract. Existing DNS-01 state must not be migrated onto it.
@@ -51,7 +57,9 @@ unreviewed runtime or use scanner exclusions for deleted fixtures.
 ## Controls and evidence
 
 Run the complete image Trivy gate and structure/functional tests on AMD64
-and native ARM64 using the exact PR commit. CI adds exact image file hashes
+and native ARM64 using the exact PR commit. The runtime smoke also forwards
+a request to a Docker network alias on an isolated, internal network.
+CI adds exact image file hashes
 and source metadata for the compiled/copied binaries in `runtime-components.json`
 to Trivy's package SBOM; this does not change what the scanner covers.
 Before promoting, demonstrate persisted state migration and restore and
