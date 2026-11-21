@@ -209,6 +209,61 @@ def _build_args(image, tag, platform):
               '-f', image['dockerfile'], image['context'])
 
 
+EGRESS_MANIFEST = ROOT / 'tools' / 'build-egress.json'
+_URL_HOST = re.compile(r'https://([a-z0-9.-]+\.[a-z]{2,})(?=[/:\s"\'`)]|$)', re.I)
+_CONTEXT_SUFFIXES = ('.sh', '.cjs', '.js', '.py', '.txt', '.patch')
+
+
+def build_egress_hosts(image):
+    """Hostnames a recipe's build may contact over HTTPS: URL literals in the Dockerfile and
+    its context scripts, plus implicit package sources inferred from base images and
+    package managers (declared in tools/build-egress.json ``implicit_by_base``)."""
+    manifest = json.loads(EGRESS_MANIFEST.read_text())
+    implicit = manifest.get('implicit_by_base', {})
+    dockerfile_path = ROOT / image['dockerfile']
+    dockerfile = dockerfile_path.read_text(errors='replace')
+    context = ROOT / image['context']
+    files = [dockerfile_path] + sorted(f for f in context.iterdir()
+                                       if f.is_file() and f.suffix in _CONTEXT_SUFFIXES)
+    hosts = set()
+    for f in files:
+        hosts.update(h.lower() for h in _URL_HOST.findall(f.read_text(errors='replace')))
+    bases = [b.lower() for b in re.findall(
+        r'^FROM\s+(?:docker\.io/)?(?:library/)?'
+        r'([a-z0-9][a-z0-9._/-]*(?::[a-z0-9_][a-z0-9_.-]*)?)', dockerfile, re.M | re.I)]
+    for base in bases:
+        if base.startswith('alpine'):
+            hosts.update(implicit.get('alpine', []))
+        if base.startswith(('debian', 'ubuntu')):
+            hosts.update(implicit.get('debian', []))
+        if re.match(r'node:.*-alpine', base):
+            hosts.update(implicit.get('node:*-alpine', []))
+    if re.search(r'\bapk\s+add\b', dockerfile):
+        hosts.update(implicit.get('alpine', []))
+    if re.search(r'\bapt-get\s+(?:update|install)\b', dockerfile):
+        hosts.update(implicit.get('debian', []))
+    if re.search(r'\byarn(?:\.js)?\s+install\b', dockerfile):
+        hosts.update(implicit.get('yarn', []))
+    if re.search(r'\bpip3?\b[^\n]*\binstall\b', dockerfile):
+        hosts.update(implicit.get('pip', []))
+    return sorted(hosts)
+
+
+def check_build_egress(images):
+    """Pre-flight for the build agents' egress proxy. Fails when any planned recipe needs a
+    host that tools/build-egress.json does not allow. Never widens egress by itself: the
+    manifest and the proxy allowlist are changed together under CHG-CI-003."""
+    manifest = json.loads(EGRESS_MANIFEST.read_text())
+    allowed = {h.lower() for h in manifest['allowed_hosts']}
+    if any(not re.fullmatch(r'[a-z0-9.-]+\.[a-z]{2,}', h) or '*' in h for h in allowed):
+        raise ValueError('build-egress-manifest-requires-exact-hosts')
+    missing = {image['name']: sorted(set(build_egress_hosts(image)) - allowed) for image in images}
+    missing = {k: v for k, v in missing.items() if v}
+    if missing:
+        raise ValueError('build-egress-not-allowlisted:' + json.dumps(missing, sort_keys=True))
+    return sorted(allowed)
+
+
 def staging_egress_required():
     return os.environ.get('RAGNARSEC_REQUIRE_STAGE_EGRESS') == '1'
 
@@ -438,29 +493,8 @@ def _inspect(ref):
     return repository + '@' + digest, per_platform
 
 
-def publish(selected, tag, output):
-    """Promote the validated per-platform images and assemble the index.
-
-    Nothing is rebuilt here: rebuilding would create bytes that were never
-    scanned or attested. The validated local images are pushed as-is, then an
-    index references their digests.
-    """
-    if os.environ.get('PUBLICATION_ENABLED') != 'true':
-        raise ValueError('publication-not-enabled')
-    from release_signing_guard import verify_signing_key
-    verify_signing_key(os.environ.get('COSIGN_KEY'))
-    key = os.environ.get('COSIGN_KEY')
-    if not key or not Path(key).is_file():
-        raise ValueError('signing-key-not-configured')
-    targets = platforms()
-    require_platforms_available(targets)
-    public = output / 'cosign.pub'
-    if public.exists():
-        public.unlink()
-    command('cosign', 'public-key', '--key', key, '--outfile', str(public))
-    if not public.is_file():
-        raise ValueError('public-key-not-derived')
-
+def verify_receipts(selected, tag, output, targets, *, inspect_images=True):
+    """Check exact plan coverage, input hashes and optional local image identity."""
     receipts = json.loads((output / 'validated.json').read_text())
     images = plan(selected)
     expected = sorted((i['name'], p, REGISTRY + i['name'] + ':' + tag + '-' + ALLOWED_PLATFORMS[p])
@@ -480,9 +514,33 @@ def publish(selected, tag, output):
             if (r['vex'] != expected or not path.is_file()
                     or hashlib.sha256(path.read_bytes()).hexdigest() != r.get('vex_sha256')):
                 raise ValueError('vex-changed')
-        actual = command('docker', 'image', 'inspect', '--format={{.Id}}', r['ref'], capture=True).stdout.strip()
-        if actual != r['id']:
-            raise ValueError('validated-image-changed')
+        if inspect_images:
+            actual = command('docker', 'image', 'inspect',
+                             '--format={{.Id}} {{.Os}}/{{.Architecture}}',
+                             r['ref'], capture=True).stdout.strip()
+            if actual != f"{r['id']} {r['platform']}":
+                raise ValueError('validated-image-changed')
+    return receipts
+
+
+def publish(selected, tag, output):
+    """Push only verified local images, without building or executing them."""
+    if os.environ.get('PUBLICATION_ENABLED') != 'true':
+        raise ValueError('publication-not-enabled')
+    from release_signing_guard import verify_signing_key
+    verify_signing_key(os.environ.get('COSIGN_KEY'))
+    key = os.environ.get('COSIGN_KEY')
+    if not key or not Path(key).is_file():
+        raise ValueError('signing-key-not-configured')
+    targets = platforms()
+    receipts = verify_receipts(selected, tag, output, targets)
+    images = plan(selected)
+    public = output / 'cosign.pub'
+    if public.exists():
+        public.unlink()
+    command('cosign', 'public-key', '--key', key, '--outfile', str(public))
+    if not public.is_file():
+        raise ValueError('public-key-not-derived')
 
     for image in images:
         refs = {}
@@ -532,7 +590,11 @@ def main():
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.action == 'plan':
-        print(json.dumps(plan(args.image)))
+        ordered = plan(args.image)
+        # Pre-flight for the build agents' egress proxy: every host a recipe may contact
+        # must be declared in tools/build-egress.json, or the plan fails before any build.
+        check_build_egress(ordered)
+        print(json.dumps(ordered))
     else:
         if args.output is None:
             parser.error('--output required')

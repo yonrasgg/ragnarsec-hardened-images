@@ -283,7 +283,7 @@ class ImagePlanning(unittest.TestCase):
                     if args[:2] == ('cosign', 'public-key'):
                         Path(args[args.index('--outfile') + 1]).write_text('pub')
                     if args[:3] == ('docker', 'image', 'inspect'):
-                        return subprocess.CompletedProcess([], 0, stdout='expected')
+                        return subprocess.CompletedProcess([], 0, stdout='expected linux/amd64')
                     return subprocess.CompletedProcess([], 0, stdout='')
 
                 env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
@@ -335,7 +335,7 @@ class ImagePlanning(unittest.TestCase):
                 if args[:3] == ('docker', 'image', 'inspect'):
                     if args[3].startswith('--format={{json .RepoDigests}}'):
                         return subprocess.CompletedProcess([], 0, stdout=json.dumps([repository + '@' + platform_digest]))
-                    return subprocess.CompletedProcess([], 0, stdout='expected')
+                    return subprocess.CompletedProcess([], 0, stdout='expected linux/amd64')
                 if args[:4] == ('docker', 'buildx', 'imagetools', 'inspect'):
                     manifest = {'digest': index_digest,
                                 'manifests': [{'platform': {'os': 'linux', 'architecture': 'amd64'},
@@ -499,7 +499,7 @@ class VexPolicy(unittest.TestCase):
                 if args[:2] == ('cosign', 'public-key'):
                     Path(args[args.index('--outfile') + 1]).write_text('pub')
                 if args[:3] == ('docker', 'image', 'inspect'):
-                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
+                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id linux/amd64')
                 return subprocess.CompletedProcess([], 0, stdout='')
 
             env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
@@ -511,6 +511,19 @@ class VexPolicy(unittest.TestCase):
 
 
 class DockerfilePolicy(unittest.TestCase):
+    def test_npm_resolver_is_readable_independent_of_the_checkout_umask(self):
+        dockerfile = (ROOT / 'nginx-proxy-manager' / 'Dockerfile').read_text()
+        self.assertIn('COPY --chmod=0444 render-resolver.cjs /usr/local/lib/npm-render-resolver.cjs',
+                      dockerfile.splitlines())
+
+    def test_npm_resolver_structure_check_does_not_expand_shell_variables(self):
+        config = (ROOT / 'tests' / 'ragnarsec-nginx-proxy-manager.yaml').read_text()
+        check = config.split("  - name: 'Resolver helper is root-owned and readable as UID 1000'", 1)[1]
+        check = check.split('\n  - name:', 1)[0]
+        # container-structure-test substitutes image environment variables in
+        # every argument before starting the command, not shell-local values.
+        self.assertNotRegex(check, r'\$(?:[A-Za-z_][A-Za-z_0-9]*|\{)')
+
     def test_shared_base_uses_supported_alpine_pin_and_matching_manifest(self):
         base = (ROOT / 'base' / 'Dockerfile').read_text()
         versions = json.loads((ROOT / 'versions.json').read_text())
@@ -738,10 +751,13 @@ class JenkinsBoundaries(unittest.TestCase):
         for forbidden in ('actions/checkout','secrets.GITHUB_TOKEN','GITHUB_ACTIONS','workflow_dispatch','ubuntu-24.04'):
             self.assertNotIn(forbidden,self.pipeline)
     def test_validation_and_publication_are_separate(self):
-        validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]
+        validation=self.pipeline.split("stage('Plan')",1)[1].split("stage('Publish')",1)[0]
         self.assertNotIn('docker login',validation)
         self.assertNotIn('withCredentials',validation)
-        publication=self.pipeline.split("stage('Publish')",1)[1]
+        matrix=self.pipeline.split('def validatePlatform()',1)[1]
+        self.assertNotIn('docker login',matrix)
+        self.assertNotIn('withCredentials',matrix)
+        publication=self.pipeline.split("stage('Publish')",1)[1].split('def validatePlatform()',1)[0]
         self.assertIn('params.PUBLISH',publication)
         self.assertIn("env.BRANCH_NAME == 'main'",publication)
         self.assertIn('input message',publication)
@@ -782,12 +798,13 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('require_one_time_sync "$head" main',provenance)
 
     def test_development_is_plan_only(self):
-        validation=self.pipeline.split("stage('Plan and validate')",1)[1].split("stage('Publish')",1)[0]
-        before,after=validation.split('if [ "$target" = "development" ]',1)
-        self.assertIn('image_ci.py plan',before)
-        self.assertNotIn('image_ci.py validate',before)
-        self.assertIn('else',after)
-        self.assertIn('image_ci.py validate',after)
+        plan=self.pipeline.split("stage('Plan')",1)[1].split("stage('Validate')",1)[0]
+        self.assertIn('image_ci.py plan',plan)
+        self.assertNotIn('image_ci.py validate',plan)
+        self.assertIn('if [ "$target" = "development" ]',plan)
+        validate=self.pipeline.split("stage('Validate')",1)[1].split("stage('Publish')",1)[0]
+        self.assertNotIn("== 'development'",validate)
+        self.assertIn('image_ci.py validate',self.pipeline.split('def validatePlatform()',1)[1])
     def test_build_root_is_recreated_and_removed(self):
         tools=self.pipeline.split("stage('Tools')",1)[1].split("stage('Secret scan')",1)[0]
         self.assertIn(': "${CI_ROOT:?}"',tools)
@@ -798,9 +815,32 @@ class JenkinsBoundaries(unittest.TestCase):
 
     def test_jenkins_checks_selected_runner_before_tool_installation(self):
         tools = self.pipeline.split("stage('Tools')", 1)[1].split("stage('Secret scan')", 1)[0]
-        guard = 'true:aarch64:linux/arm64|false:x86_64:*'
+        guard = 'test "$(uname -m)" = x86_64'
         self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
-        self.assertIn("params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'", self.pipeline)
+        self.assertLess(tools.index(guard), tools.index('rm -rf "$CI_ROOT"'))
+
+    def test_jenkins_validates_both_platforms_in_parallel_on_native_agents(self):
+        validate = self.pipeline.split("stage('Validate')", 1)[1].split("stage('Publish')", 1)[0]
+        self.assertIn('parallel {', validate)
+        self.assertIn("stage('Validate linux/amd64')", validate)
+        self.assertIn("stage('Validate linux/arm64')", validate)
+        self.assertNotIn("agent { label 'ragnarsec-linux' }", validate)
+        self.assertIn("agent { label 'ragnarsec-linux-arm64' }", validate)
+        self.assertIn("== 'staging'", validate)
+        self.assertIn("== 'main'", validate)
+        func = self.pipeline.split('def validatePlatform()', 1)[1]
+        self.assertIn('amd64:x86_64|arm64:aarch64', func)
+        self.assertIn('RAGNARSEC_REQUIRE_STAGE_EGRESS=1', func)
+        self.assertIn('image_ci.py validate', func)
+
+    def test_jenkins_plan_stage_infers_image_and_runs_egress_gate(self):
+        plan = self.pipeline.split("stage('Plan')", 1)[1].split("stage('Validate')", 1)[0]
+        self.assertIn('tools/select_image.py --image "$IMAGE"', plan)
+        self.assertLess(plan.index('select_image.py'), plan.index('image_ci.py plan'))
+        self.assertIn('env.CI_VALIDATION_IMAGE', plan)
+        self.assertIn('select IMAGE explicitly for a branch build', plan)
+        self.assertIn('promotion requires both native platforms', plan)
+        self.assertIn('Development build: plan only', plan)
 
     def test_jenkins_exports_the_declared_image_parameter(self):
         environment = self.pipeline.split('  environment {', 1)[1].split('  stages {', 1)[0]

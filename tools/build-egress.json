@@ -1,0 +1,20 @@
+{
+  "$schema": "ragnarsec-build-egress-v1",
+  "comment": "Exact hostnames the build agents' egress proxy must allow for RUN steps (CONNECT 443 only). Changing this file is a perimeter change (CHG-CI-003) and requires the proxy allowlist to be updated in the same window.",
+  "allowed_hosts": [
+    "github.com", "api.github.com", "release-assets.githubusercontent.com",
+    "registry-1.docker.io", "auth.docker.io", "production.cloudfront.docker.com",
+    "ghcr.io", "pkg-containers.githubusercontent.com",
+    "deb.debian.org", "security.debian.org", "deb.nodesource.com",
+    "codeload.github.com", "raw.githubusercontent.com", "openresty.org",
+    "registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org",
+    "dl-cdn.alpinelinux.org"
+  ],
+  "implicit_by_base": {
+    "alpine": ["dl-cdn.alpinelinux.org"],
+    "debian": ["deb.debian.org", "security.debian.org"],
+    "node:*-alpine": ["dl-cdn.alpinelinux.org"],
+    "yarn": ["registry.yarnpkg.com"],
+    "pip": ["pypi.org", "files.pythonhosted.org"]
+  }
+}

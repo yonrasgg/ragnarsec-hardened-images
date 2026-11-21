@@ -14,8 +14,10 @@
 // Job requirements (owned by Jenkins, not by this repository):
 // - multibranch pipeline with a non-shallow checkout;
 // - an x86_64 agent labeled `ragnarsec-linux` with python3, git, docker and buildx;
-//   ARM64 targets require qemu-aarch64 binfmt on this AMD64 CI host;
-// - optional dedicated AArch64 agent labeled `ragnarsec-linux-arm64`, with
+// - PR builds infer IMAGE from the diff (tools/select_image.py); IMAGE stays a
+//   parameter for manual runs. Promotion builds (target staging/main) validate
+//   linux/amd64 and linux/arm64 in parallel, each on its native agent;
+// - dedicated AArch64 agent labeled `ragnarsec-linux-arm64`, with
 //   the same rootless Docker and guarded egress contract; never the controller;
 // - a selected buildx builder using the `docker` driver so validated local
 //   parent tags are visible to dependent builds before publication;
@@ -25,7 +27,9 @@
 // - a required status check named after this job, configured in the ruleset.
 
 pipeline {
-  agent { label "${params.NATIVE_ARM64 == true ? 'ragnarsec-linux-arm64' : 'ragnarsec-linux'}" }
+  // Control, AMD64 validation and publication share the sole AMD64 executor.
+  // Only the ARM64 branch acquires another node; it binds its own Docker socket.
+  agent { label 'ragnarsec-linux' }
 
   options {
     skipDefaultCheckout()
@@ -38,6 +42,7 @@ pipeline {
     choice(
       name: 'IMAGE',
       choices: [
+        '',
         'ragnarsec-alertmanager',
         'ragnarsec-arcane',
         'ragnarsec-base',
@@ -62,7 +67,7 @@ pipeline {
         'ragnarsec-valkey',
         'ragnarsec-wgdashboard'
       ],
-      description: 'One image; only its required build parents are included.'
+      description: 'One image; only its required build parents are included. Empty = infer from the change request diff.'
     )
     booleanParam(
       name: 'PUBLISH',
@@ -82,7 +87,7 @@ pipeline {
     booleanParam(
       name: 'NATIVE_ARM64',
       defaultValue: false,
-      description: 'Use the dedicated ARM64 runner. Requires PLATFORMS=linux/arm64.'
+      description: 'Legacy parameter; leave false. Promotion always validates both native runners.'
     )
   }
 
@@ -101,219 +106,311 @@ pipeline {
   }
 
   stages {
-    stage('Checkout SCM') {
-      steps {
-        checkout scm
+    stage('Control') {
+      stages {
+      stage('Checkout SCM') {
+        steps {
+          checkout scm
+        }
       }
-    }
 
-    stage('Provenance') {
-      steps {
-        sh '''
-          set -euo pipefail
-          python3 tools/ci_docker_endpoint.py
-          test "$(git rev-parse --is-shallow-repository)" = "false" || {
-            echo 'STOP: complete history required; configure a non-shallow checkout.' >&2
-            exit 2
-          }
-          require_traceable() {
-            branch="$1"
-            commit="$2"
-            message="$3"
-            git fetch --no-tags origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"
-            if git merge-base --is-ancestor "$commit" "origin/${branch}"; then
-              return 0
-            fi
-            tree="$(git rev-parse "${commit}^{tree}")"
-            if git log --format='%T' "origin/${branch}" | grep -x "$tree" >/dev/null; then
-              return 0
-            fi
-            echo "STOP: ${message}" >&2
-            exit 2
-          }
-          # One-time recovery for the divergent staging/main histories. Each
-          # branch is exact-named, based on a frozen target tip, and must equal
-          # the current source tree. The exception expires when the target moves.
-          require_one_time_sync() {
-            commit="$1"
-            base="$2"
-            expected_tip="$3"
-            source_branch="$4"
-            git fetch --no-tags origin \
-              "+refs/heads/${base}:refs/remotes/origin/${base}" \
-              "+refs/heads/${source_branch}:refs/remotes/origin/${source_branch}"
-            test "$(git rev-parse "origin/${base}")" = "$expected_tip" || {
-              echo 'STOP: target base changed; sync exception expired.' >&2
+      stage('Provenance') {
+        steps {
+          sh '''
+            set -euo pipefail
+            python3 tools/ci_docker_endpoint.py
+            test "$(git rev-parse --is-shallow-repository)" = "false" || {
+              echo 'STOP: complete history required; configure a non-shallow checkout.' >&2
               exit 2
             }
-            git merge-base --is-ancestor "origin/$base" "$commit" || {
-              echo 'STOP: sync branch must descend from target base.' >&2
+            require_traceable() {
+              branch="$1"
+              commit="$2"
+              message="$3"
+              git fetch --no-tags origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"
+              if git merge-base --is-ancestor "$commit" "origin/${branch}"; then
+                return 0
+              fi
+              tree="$(git rev-parse "${commit}^{tree}")"
+              if git log --format='%T' "origin/${branch}" | grep -x "$tree" >/dev/null; then
+                return 0
+              fi
+              echo "STOP: ${message}" >&2
               exit 2
             }
-            test "$(git rev-parse "${commit}^{tree}")" = \
-              "$(git rev-parse "origin/${source_branch}^{tree}")" || {
-                echo 'STOP: sync tree differs from current source branch.' >&2
+            # One-time recovery for the divergent staging/main histories. Each
+            # branch is exact-named, based on a frozen target tip, and must equal
+            # the current source tree. The exception expires when the target moves.
+            require_one_time_sync() {
+              commit="$1"
+              base="$2"
+              expected_tip="$3"
+              source_branch="$4"
+              git fetch --no-tags origin \
+                "+refs/heads/${base}:refs/remotes/origin/${base}" \
+                "+refs/heads/${source_branch}:refs/remotes/origin/${source_branch}"
+              test "$(git rev-parse "origin/${base}")" = "$expected_tip" || {
+                echo 'STOP: target base changed; sync exception expired.' >&2
                 exit 2
+              }
+              git merge-base --is-ancestor "origin/$base" "$commit" || {
+                echo 'STOP: sync branch must descend from target base.' >&2
+                exit 2
+              }
+              test "$(git rev-parse "${commit}^{tree}")" = \
+                "$(git rev-parse "origin/${source_branch}^{tree}")" || {
+                  echo 'STOP: sync tree differs from current source branch.' >&2
+                  exit 2
+              }
             }
-          }
-          require_linear_arm64_sync() {
-            require_one_time_sync "$@"
-            test "$(git rev-list --parents -n 1 "$1")" = "$1 $3" || {
-              echo 'STOP: ARM64 sync must have exactly the pinned target parent.' >&2
+            require_linear_arm64_sync() {
+              require_one_time_sync "$@"
+              test "$(git rev-list --parents -n 1 "$1")" = "$1 $3" || {
+                echo 'STOP: ARM64 sync must have exactly the pinned target parent.' >&2
+                exit 2
+              }
+            }
+            target="${CHANGE_TARGET:-$BRANCH_NAME}"
+            if [ -n "${CHANGE_TARGET:-}" ]; then
+              source="${CHANGE_BRANCH:-}"
+              source="${source##*:}"
+              head="$(git rev-parse --verify HEAD^2 2>/dev/null || git rev-parse HEAD)"
+              case "$target" in
+                staging)
+                  if [ "$source" = "development" ]; then
+                    require_traceable development "$head" 'staging pull request is not traceable to development.'
+                  elif [ "$source" = "sync/development-to-staging-native-arm64-trivy-workspace-tmp" ]; then
+                    require_linear_arm64_sync "$head" staging \
+                      e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
+                  elif [ "$source" = "sync/development-to-staging-native-nginx-118" ]; then
+                    require_linear_arm64_sync "$head" staging \
+                      e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
+                  elif [ "$source" = "sync/development-to-staging-native-nginx-budget" ]; then
+                    require_linear_arm64_sync "$head" staging \
+                      e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
+                  elif [ "$source" = "sync/development-to-staging-native-npm-124" ]; then
+                    require_linear_arm64_sync "$head" staging \
+                      edc2b7eee148551f122a89c59298008f69eaf70d development
+                  elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
+                    require_one_time_sync "$head" staging \
+                      be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
+                  elif [ "$source" = "sync/development-to-staging-node-exporter-entrypoint-20261119" ]; then
+                    staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91
+                    require_one_time_sync "$head" staging "$staging_tip" development
+                    test "$(git rev-list --parents -n 1 "$head")" = "$head $staging_tip" || {
+                      echo 'STOP: staging sync must have exactly the pinned staging parent.' >&2
+                      exit 2
+                    }
+                  else
+                    echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
+                    exit 2
+                  fi
+                  ;;
+                main)
+                  if [ "$source" = "staging" ]; then
+                    require_traceable staging "$head" 'main pull request is not traceable to staging.'
+                  elif [ "$source" = "sync/staging-to-main-native-arm64-106" ]; then
+                    require_linear_arm64_sync "$head" main \
+                      32ba41c1ec403776cb4a8d8df3d184205f6020d0 staging
+                  elif [ "$source" = "sync/staging-to-main-native-npm-124" ]; then
+                    require_linear_arm64_sync "$head" main \
+                      86db549ecd9853853e8821844dccc9dc8197e8c5 staging
+                  elif [ "$source" = "sync/staging-to-main-vex-20261103" ]; then
+                    require_one_time_sync "$head" main \
+                      faaf17460b6e828c02e455665015fb05828b1c87 staging
+                  else
+                    echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
+                    exit 2
+                  fi
+                  ;;
+              esac
+            else
+              case "$target" in
+                staging)
+                  require_traceable development HEAD 'staging commit is not traceable to development.'
+                  ;;
+                main)
+                  require_traceable staging HEAD 'main commit is not traceable to staging.'
+                  ;;
+              esac
+            fi
+          '''
+        }
+      }
+
+      stage('Contract') {
+        steps {
+          dir('ci-summary') { deleteDir() }
+          // Retire transfer paths used by the earlier revision of this PR.
+          dir('validation-artifacts') { deleteDir() }
+          dir('validation-amd64') { deleteDir() }
+          dir('validation-arm64') { deleteDir() }
+          sh 'rm -f -- ragnarsec-ci-image'
+          sh '''
+            set -euo pipefail
+            test -n "${WORKSPACE_TMP:-}" || {
+              echo 'STOP: WORKSPACE_TMP is required to keep CI artifacts outside the checkout.' >&2
               exit 2
             }
-          }
-          target="${CHANGE_TARGET:-$BRANCH_NAME}"
-          if [ -n "${CHANGE_TARGET:-}" ]; then
-            source="${CHANGE_BRANCH:-}"
-            source="${source##*:}"
-            head="$(git rev-parse --verify HEAD^2 2>/dev/null || git rev-parse HEAD)"
-            case "$target" in
-              staging)
-                if [ "$source" = "development" ]; then
-                  require_traceable development "$head" 'staging pull request is not traceable to development.'
-                elif [ "$source" = "sync/development-to-staging-native-arm64-trivy-workspace-tmp" ]; then
-                  require_linear_arm64_sync "$head" staging \
-                    e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
-                elif [ "$source" = "sync/development-to-staging-native-nginx-118" ]; then
-                  require_linear_arm64_sync "$head" staging \
-                    e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
-                elif [ "$source" = "sync/development-to-staging-native-nginx-budget" ]; then
-                  require_linear_arm64_sync "$head" staging \
-                    e4821cb1bcefb2e0a0a3b55c7461be8e73e8bd1e development
-                elif [ "$source" = "sync/development-to-staging-native-npm-124" ]; then
-                  require_linear_arm64_sync "$head" staging \
-                    edc2b7eee148551f122a89c59298008f69eaf70d development
-                elif [ "$source" = "sync/development-to-staging-vex-20261103" ]; then
-                  require_one_time_sync "$head" staging \
-                    be401b0e4b6f4463e419ee4e67f0d567221ccc9d development
-                elif [ "$source" = "sync/development-to-staging-node-exporter-entrypoint-20261119" ]; then
-                  staging_tip=96e2cba1a818751d827ddda9397b8f14995c2c91
-                  require_one_time_sync "$head" staging "$staging_tip" development
-                  test "$(git rev-list --parents -n 1 "$head")" = "$head $staging_tip" || {
-                    echo 'STOP: staging sync must have exactly the pinned staging parent.' >&2
-                    exit 2
-                  }
-                else
-                  echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
-                  exit 2
-                fi
-                ;;
-              main)
-                if [ "$source" = "staging" ]; then
-                  require_traceable staging "$head" 'main pull request is not traceable to staging.'
-                elif [ "$source" = "sync/staging-to-main-native-arm64-106" ]; then
-                  require_linear_arm64_sync "$head" main \
-                    32ba41c1ec403776cb4a8d8df3d184205f6020d0 staging
-                elif [ "$source" = "sync/staging-to-main-native-npm-124" ]; then
-                  require_linear_arm64_sync "$head" main \
-                    86db549ecd9853853e8821844dccc9dc8197e8c5 staging
-                elif [ "$source" = "sync/staging-to-main-vex-20261103" ]; then
-                  require_one_time_sync "$head" main \
-                    faaf17460b6e828c02e455665015fb05828b1c87 staging
-                else
-                  echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
-                  exit 2
-                fi
-                ;;
-            esac
-          else
-            case "$target" in
-              staging)
-                require_traceable development HEAD 'staging commit is not traceable to development.'
-                ;;
-              main)
-                require_traceable staging HEAD 'main commit is not traceable to staging.'
-                ;;
-            esac
-          fi
-        '''
+            test "$(git rev-parse --is-shallow-repository)" = "false" || {
+              echo 'STOP: complete history required; configure a non-shallow checkout.' >&2
+              exit 2
+            }
+            python3 -m unittest discover -s tests -p 'test_public*.py'
+            python3 tools/publication_guard.py . --history
+          '''
+        }
       }
-    }
 
-    stage('Contract') {
-      steps {
-        sh '''
-          set -euo pipefail
-          test -n "${WORKSPACE_TMP:-}" || {
-            echo 'STOP: WORKSPACE_TMP is required to keep CI artifacts outside the checkout.' >&2
-            exit 2
-          }
-          test "$(git rev-parse --is-shallow-repository)" = "false" || {
-            echo 'STOP: complete history required; configure a non-shallow checkout.' >&2
-            exit 2
-          }
-          python3 -m unittest discover -s tests -p 'test_public*.py'
-          python3 tools/publication_guard.py . --history
-        '''
+      stage('Tools') {
+        steps {
+          sh '''
+            set -euo pipefail
+            test "$(uname -m)" = x86_64 || { echo 'STOP: control stages require the x86_64 agent.' >&2; exit 2; }
+            : "${CI_ROOT:?}"
+            # Jenkins may reuse the workspace; the installer requires a new
+            # directory and validation receipts must never survive a build.
+            rm -rf "$CI_ROOT"
+            mkdir -m 700 -p "$CI_ROOT"
+            python3 tools/install_ci_tools.py "$CI_TOOLS"
+          '''
+        }
       }
-    }
 
-    stage('Tools') {
-      steps {
-        sh '''
-          set -euo pipefail
-          case "$CI_NATIVE_ARM64:$(uname -m):$PLATFORMS" in
-            true:aarch64:linux/arm64|false:x86_64:*) ;;
-            *) echo 'STOP: runner architecture or native ARM64 target mismatch.' >&2; exit 2 ;;
-          esac
-          : "${CI_ROOT:?}"
-          # Jenkins may reuse the workspace; the installer requires a new
-          # directory and validation receipts must never survive a build.
-          rm -rf "$CI_ROOT"
-          mkdir -m 700 -p "$CI_ROOT"
-          python3 tools/install_ci_tools.py "$CI_TOOLS"
-        '''
-      }
-    }
-
-    stage('Secret scan') {
-      steps {
-        sh '''
-          set -euo pipefail
-          export PATH="$CI_TOOLS:$PATH"
-          cfg="$CI_ROOT/gitleaks.toml"
-          cat > "$cfg" <<'GITLEAKS_CONFIG'
+      stage('Secret scan') {
+        steps {
+          sh '''
+            set -euo pipefail
+            export PATH="$CI_TOOLS:$PATH"
+            cfg="$CI_ROOT/gitleaks.toml"
+            cat > "$cfg" <<'GITLEAKS_CONFIG'
 [extend]
 useDefault = true
 GITLEAKS_CONFIG
-          gitleaks git . --log-opts='--all --full-history' \
-            --config "$cfg" --gitleaks-ignore-path "$CI_ROOT/no-ignore" \
-            --ignore-gitleaks-allow --redact=100 --no-banner
-          gitleaks dir . \
-            --config "$cfg" --gitleaks-ignore-path "$CI_ROOT/no-ignore" \
-            --ignore-gitleaks-allow --redact=100 --no-banner
-        '''
+            gitleaks git . --log-opts='--all --full-history' \
+              --config "$cfg" --gitleaks-ignore-path "$CI_ROOT/no-ignore" \
+              --ignore-gitleaks-allow --redact=100 --no-banner
+            gitleaks dir . \
+              --config "$cfg" --gitleaks-ignore-path "$CI_ROOT/no-ignore" \
+              --ignore-gitleaks-allow --redact=100 --no-banner
+          '''
+        }
+      }
+
+      stage('Plan') {
+        steps {
+          sh '''
+            set -euo pipefail
+            target="${CHANGE_TARGET:-$BRANCH_NAME}"
+            test "$CI_NATIVE_ARM64" = false || {
+              echo 'STOP: the legacy NATIVE_ARM64 flag must be false.' >&2
+              exit 2
+            }
+            case "$target" in
+              staging|main)
+                python3 -c 'from tools.image_ci import platforms; import sys; sys.exit(set(platforms()) != {"linux/amd64", "linux/arm64"})' || {
+                  echo 'STOP: promotion requires both native platforms.' >&2
+                  exit 2
+                }
+                ;;
+            esac
+            if [ -n "${CHANGE_TARGET:-}" ]; then
+              git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/${target}"
+              base="origin/${target}"
+            else
+              if [ -z "$IMAGE" ]; then
+                echo 'STOP: select IMAGE explicitly for a branch build.' >&2
+                exit 2
+              fi
+              base=HEAD
+            fi
+            selection="$(python3 tools/select_image.py --image "$IMAGE" --base "$base" --head HEAD)"
+            resolved="$(printf '%s' "$selection" | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
+            echo "Resolved image: ${resolved}"
+            printf '%s\\n' "$resolved" > "$CI_ROOT/image"
+            python3 tools/image_ci.py plan --image "$resolved"
+            if [ "$target" = "development" ]; then
+              echo 'Development build: plan only; full image validation runs on staging.'
+            fi
+          '''
+          script {
+            env.CI_VALIDATION_IMAGE = sh(script: 'cat "$CI_ROOT/image"', returnStdout: true).trim()
+            env.CI_SOURCE_REVISION = sh(script: 'git rev-parse --verify HEAD', returnStdout: true).trim()
+            env.CI_BUILD_DATE = sh(script: "date -u +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
+            def suffix = params.IMAGE_TAG_SUFFIX ? "-${params.IMAGE_TAG_SUFFIX}" : ''
+            env.CI_IMAGE_TAG = "sha-${env.CI_SOURCE_REVISION}-${env.BUILD_NUMBER}${suffix}"
+          }
+        }
+      }
+
       }
     }
 
-    stage('Plan and validate') {
+    stage('Validate') {
+      when {
+        anyOf {
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'staging' }
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'main' }
+        }
+      }
+      // Each platform validates the same source on its native agent.
+      parallel {
+        stage('Validate linux/amd64') {
+          environment { CI_PLATFORM = 'linux/amd64'; CI_RUNNER_ARCH = 'amd64' }
+          steps {
+            script { validatePlatform() }
+          }
+        }
+        stage('Validate linux/arm64') {
+          agent { label 'ragnarsec-linux-arm64' }
+          environment { CI_PLATFORM = 'linux/arm64'; CI_RUNNER_ARCH = 'arm64' }
+          steps {
+            checkout scm
+            script {
+              validatePlatform()
+              dir("${pwd(tmp: true)}/ragnarsec-ci/arm64") {
+                stash name: 'validation-arm64', includes: '*'
+              }
+            }
+          }
+          post {
+            cleanup {
+              dir("${pwd(tmp: true)}/ragnarsec-ci") { deleteDir() }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Verify native handoff') {
+      when {
+        anyOf {
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'staging' }
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'main' }
+        }
+      }
       steps {
+        dir("${env.CI_ROOT}/arm64") { unstash 'validation-arm64' }
         sh '''
           set -euo pipefail
-          # Explicit checkout does not reliably export GIT_COMMIT to later steps.
-          export GIT_COMMIT="$(git rev-parse --verify HEAD)"
-          export PATH="$CI_TOOLS:$PATH"
-          export BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          runner_arch=amd64
-          if [ "$CI_NATIVE_ARM64" = true ]; then runner_arch=arm64; fi
-          export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}-${runner_arch}"
-          if [ -n "${IMAGE_TAG_SUFFIX:-}" ]; then
-            export IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"
-          fi
-          mkdir -p "$CI_ROOT"
-          printf '%s' "$IMAGE_TAG" > "$CI_ROOT/image-tag"
-          target="${CHANGE_TARGET:-$BRANCH_NAME}"
-          python3 tools/image_ci.py plan --image "$IMAGE"
-          if [ "$target" = "development" ]; then
-            echo 'Development build: plan only; full image validation runs on staging.'
-          else
-            # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
-            validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
-            TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
-              --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
-          fi
+          # The same AMD64 node already proved its rootless daemon. After
+          # Buildx, verify the now-existing private config instead of requiring absence.
+          python3 tools/ci_docker_endpoint.py --config-only
+          python3 tools/validation_handoff.py assemble --image "$CI_VALIDATION_IMAGE" \
+            --tag "$CI_IMAGE_TAG" --revision "$CI_SOURCE_REVISION" --directory "$CI_ROOT" \
+            --output "$VALIDATION_OUTPUT"
+          cat "$CI_ROOT/amd64/validate.log" "$CI_ROOT/arm64/validate.log" > "$CI_ROOT/validate.log"
+          mkdir -m 700 "$WORKSPACE/ci-summary"
+          python3 tools/validation_summary.py --output "$VALIDATION_OUTPUT" --log "$CI_ROOT/validate.log" \
+            --commit "$CI_SOURCE_REVISION" --target "${CHANGE_TARGET:-$BRANCH_NAME}" \
+            --run-url "${BUILD_URL:-}" --write "$WORKSPACE/ci-summary"
         '''
+        archiveArtifacts artifacts: 'ci-summary/summary.md, ci-summary/summary.json'
+      }
+      post {
+        cleanup {
+          dir('ci-summary') { deleteDir() }
+        }
       }
     }
 
@@ -338,12 +435,11 @@ GITLEAKS_CONFIG
           sh '''
             set -euo pipefail
             export PATH="$CI_TOOLS:$PATH"
-            export IMAGE_TAG="$(cat "$CI_ROOT/image-tag")"
             python3 tools/release_signing_guard.py
             export PUBLICATION_ENABLED=true
             printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
-            python3 tools/image_ci.py publish --image "$IMAGE" \
-              --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
+            python3 tools/image_ci.py publish --image "$CI_VALIDATION_IMAGE" \
+              --tag "$CI_IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           '''
         }
       }
@@ -357,8 +453,7 @@ GITLEAKS_CONFIG
            python3 tools/ci_docker_endpoint.py --config-only >/dev/null 2>&1; then
           docker logout ghcr.io >/dev/null 2>&1 || true
         fi
-        # Remove every per-build artifact: credentials, pinned tools, receipts
-        # and the derived public key. The next build starts from an empty root.
+        # This post step cleans the AMD64 workspace. ARM64 has its own post step.
         if [ -n "${CI_ROOT:-}" ]; then
           rm -rf "$CI_ROOT"
         fi
@@ -371,4 +466,48 @@ GITLEAKS_CONFIG
       echo 'Validation failed. Do not publish or merge on this build.'
     }
   }
+}
+
+// Validation of one platform on its native agent. Called from the parallel matrix.
+def validatePlatform() {
+  sh '''
+    set -euo pipefail
+    case "$CI_RUNNER_ARCH:$(uname -m)" in
+      amd64:x86_64|arm64:aarch64) ;;
+      *) echo 'STOP: platform/agent mismatch.' >&2; exit 2 ;;
+    esac
+    export PLATFORMS="$CI_PLATFORM"
+    export CI_NATIVE_ARM64="$([ "$CI_RUNNER_ARCH" = arm64 ] && echo true || echo false)"
+    export GIT_COMMIT="$(git rev-parse --verify HEAD)"
+    test "$GIT_COMMIT" = "$CI_SOURCE_REVISION" || {
+      echo 'STOP: native checkout does not match the control revision.' >&2
+      exit 2
+    }
+    export BUILD_DATE="$CI_BUILD_DATE"
+    export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:?}/docker.sock"
+    export CI_ROOT="${WORKSPACE_TMP:?}/ragnarsec-ci"
+    export CI_TOOLS="$CI_ROOT/tools"
+    export DOCKER_CONFIG="$CI_ROOT/docker-auth"
+    export TRIVY_CACHE_DIR="$CI_ROOT/trivy-cache"
+    if [ "$CI_RUNNER_ARCH" = arm64 ]; then
+      rm -rf "$CI_ROOT"
+      mkdir -m 700 "$CI_ROOT"
+    fi
+    python3 tools/ci_docker_endpoint.py
+    mkdir -m 700 "$DOCKER_CONFIG"
+    if [ "$CI_RUNNER_ARCH" = arm64 ]; then
+      python3 tools/install_ci_tools.py "$CI_TOOLS"
+    fi
+    export PATH="$CI_TOOLS:$PATH"
+    output="$CI_ROOT/$CI_RUNNER_ARCH"
+    # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
+    validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
+    TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate \
+      --image "$CI_VALIDATION_IMAGE" --tag "$CI_IMAGE_TAG" --output "$output" 2>&1 | tee "$CI_ROOT/validate-$CI_RUNNER_ARCH.log"
+    mv "$CI_ROOT/validate-$CI_RUNNER_ARCH.log" "$output/validate.log"
+    if [ "$CI_RUNNER_ARCH" = arm64 ]; then
+      python3 tools/validation_handoff.py pack --image "$CI_VALIDATION_IMAGE" \
+        --tag "$CI_IMAGE_TAG" --revision "$CI_SOURCE_REVISION" --directory "$output"
+    fi
+  '''
 }
