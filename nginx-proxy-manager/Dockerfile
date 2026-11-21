@@ -82,6 +82,7 @@ COPY --from=openresty /stage/usr/lib/nginx/modules/ngx_http_geoip2_module.so /us
 COPY --from=openresty /stage/etc/nginx/luajit/lib/ /etc/nginx/luajit/lib/
 COPY --from=openresty /stage/etc/nginx/lualib/ /etc/nginx/lualib/
 COPY --from=certbot /opt/certbot /opt/certbot
+COPY render-resolver.cjs /usr/local/lib/npm-render-resolver.cjs
 COPY --chmod=0755 start.sh /usr/local/bin/npm-start
 
 ARG BUILD_DATE=1970-01-01T00:00:00Z

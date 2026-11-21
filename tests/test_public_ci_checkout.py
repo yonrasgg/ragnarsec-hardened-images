@@ -15,13 +15,13 @@ class CheckoutContract(unittest.TestCase):
     def test_explicit_scm_checkout_precedes_provenance(self):
         pipeline = (Path(__file__).resolve().parents[1] / "Jenkinsfile").read_text()
         self.assertRegex(pipeline, r"options\s*\{\s*skipDefaultCheckout\(\)")
-        # Control stages share one parent agent so skipDefaultCheckout() cannot
+        # Control stages share the global agent so skipDefaultCheckout() cannot
         # leave Provenance/Secret scan/Plan on a fresh worker without a checkout.
         entry = re.search(
-            r"stage\('Control'\)\s*\{\s*agent\s*\{[^}]*\}\s*stages\s*\{\s*"
+            r"agent \{ label 'ragnarsec-linux' \}.*?stage\('Control'\)\s*\{\s*stages\s*\{\s*"
             r"stage\('Checkout SCM'\)\s*\{\s*steps\s*\{\s*checkout scm\s*\}\s*\}\s*"
             r"stage\('Provenance'\)",
-            pipeline,
+            pipeline, re.S,
         )
         self.assertIsNotNone(entry)
         control = entry.group(0)

@@ -12,6 +12,8 @@ for dir in default_host default_www proxy_host redirection_host stream dead_host
     mkdir -p "/data/nginx/$dir"
 done
 
+node /usr/local/lib/npm-render-resolver.cjs
+
 # Match upstream's peer authentication contract; do not bake the secret in a layer.
 NPM_PEER_SECRET="$(openssl rand -hex 32)"
 test "${#NPM_PEER_SECRET}" -eq 64

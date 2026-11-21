@@ -283,7 +283,7 @@ class ImagePlanning(unittest.TestCase):
                     if args[:2] == ('cosign', 'public-key'):
                         Path(args[args.index('--outfile') + 1]).write_text('pub')
                     if args[:3] == ('docker', 'image', 'inspect'):
-                        return subprocess.CompletedProcess([], 0, stdout='expected')
+                        return subprocess.CompletedProcess([], 0, stdout='expected linux/amd64')
                     return subprocess.CompletedProcess([], 0, stdout='')
 
                 env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
@@ -335,7 +335,7 @@ class ImagePlanning(unittest.TestCase):
                 if args[:3] == ('docker', 'image', 'inspect'):
                     if args[3].startswith('--format={{json .RepoDigests}}'):
                         return subprocess.CompletedProcess([], 0, stdout=json.dumps([repository + '@' + platform_digest]))
-                    return subprocess.CompletedProcess([], 0, stdout='expected')
+                    return subprocess.CompletedProcess([], 0, stdout='expected linux/amd64')
                 if args[:4] == ('docker', 'buildx', 'imagetools', 'inspect'):
                     manifest = {'digest': index_digest,
                                 'manifests': [{'platform': {'os': 'linux', 'architecture': 'amd64'},
@@ -499,7 +499,7 @@ class VexPolicy(unittest.TestCase):
                 if args[:2] == ('cosign', 'public-key'):
                     Path(args[args.index('--outfile') + 1]).write_text('pub')
                 if args[:3] == ('docker', 'image', 'inspect'):
-                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id')
+                    return subprocess.CompletedProcess([], 0, stdout='sha256:local-image-id linux/amd64')
                 return subprocess.CompletedProcess([], 0, stdout='')
 
             env = {'PUBLICATION_ENABLED': 'true', 'COSIGN_KEY': str(p / 'cosign.key'),
@@ -804,14 +804,14 @@ class JenkinsBoundaries(unittest.TestCase):
         tools = self.pipeline.split("stage('Tools')", 1)[1].split("stage('Secret scan')", 1)[0]
         guard = 'test "$(uname -m)" = x86_64'
         self.assertLess(tools.index(guard), tools.index('install_ci_tools.py'))
-        self.assertIn('agent none', self.pipeline)
+        self.assertLess(tools.index(guard), tools.index('rm -rf "$CI_ROOT"'))
 
     def test_jenkins_validates_both_platforms_in_parallel_on_native_agents(self):
         validate = self.pipeline.split("stage('Validate')", 1)[1].split("stage('Publish')", 1)[0]
         self.assertIn('parallel {', validate)
         self.assertIn("stage('Validate linux/amd64')", validate)
         self.assertIn("stage('Validate linux/arm64')", validate)
-        self.assertIn("agent { label 'ragnarsec-linux' }", validate)
+        self.assertNotIn("agent { label 'ragnarsec-linux' }", validate)
         self.assertIn("agent { label 'ragnarsec-linux-arm64' }", validate)
         self.assertIn("== 'staging'", validate)
         self.assertIn("== 'main'", validate)
@@ -824,7 +824,9 @@ class JenkinsBoundaries(unittest.TestCase):
         plan = self.pipeline.split("stage('Plan')", 1)[1].split("stage('Validate')", 1)[0]
         self.assertIn('tools/select_image.py --image "$IMAGE"', plan)
         self.assertLess(plan.index('select_image.py'), plan.index('image_ci.py plan'))
-        self.assertIn("stash name: 'resolved-image'", plan)
+        self.assertIn('env.CI_VALIDATION_IMAGE', plan)
+        self.assertIn('select IMAGE explicitly for a branch build', plan)
+        self.assertIn('promotion requires both native platforms', plan)
         self.assertIn('Development build: plan only', plan)
 
     def test_jenkins_exports_the_declared_image_parameter(self):

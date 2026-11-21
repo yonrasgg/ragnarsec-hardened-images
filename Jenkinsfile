@@ -17,8 +17,7 @@
 // - PR builds infer IMAGE from the diff (tools/select_image.py); IMAGE stays a
 //   parameter for manual runs. Promotion builds (target staging/main) validate
 //   linux/amd64 and linux/arm64 in parallel, each on its native agent;
-//   ARM64 targets require qemu-aarch64 binfmt on this AMD64 CI host;
-// - optional dedicated AArch64 agent labeled `ragnarsec-linux-arm64`, with
+// - dedicated AArch64 agent labeled `ragnarsec-linux-arm64`, with
 //   the same rootless Docker and guarded egress contract; never the controller;
 // - a selected buildx builder using the `docker` driver so validated local
 //   parent tags are visible to dependent builds before publication;
@@ -28,9 +27,8 @@
 // - a required status check named after this job, configured in the ruleset.
 
 pipeline {
-  // A pipeline-level agent is required: DOCKER_HOST is derived from
-  // XDG_RUNTIME_DIR in the environment block, which is evaluated before any
-  // stage node with `agent none`. Stages with their own agent override this.
+  // Control, AMD64 validation and publication share the sole AMD64 executor.
+  // Only the ARM64 branch acquires another node; it binds its own Docker socket.
   agent { label 'ragnarsec-linux' }
 
   options {
@@ -89,7 +87,7 @@ pipeline {
     booleanParam(
       name: 'NATIVE_ARM64',
       defaultValue: false,
-      description: 'Use the dedicated ARM64 runner. Requires PLATFORMS=linux/arm64.'
+      description: 'Legacy parameter; leave false. Promotion always validates both native runners.'
     )
   }
 
@@ -109,7 +107,6 @@ pipeline {
 
   stages {
     stage('Control') {
-      agent { label 'ragnarsec-linux' }
       stages {
       stage('Checkout SCM') {
         steps {
@@ -243,6 +240,12 @@ pipeline {
 
       stage('Contract') {
         steps {
+          dir('ci-summary') { deleteDir() }
+          // Retire transfer paths used by the earlier revision of this PR.
+          dir('validation-artifacts') { deleteDir() }
+          dir('validation-amd64') { deleteDir() }
+          dir('validation-arm64') { deleteDir() }
+          sh 'rm -f -- ragnarsec-ci-image'
           sh '''
             set -euo pipefail
             test -n "${WORKSPACE_TMP:-}" || {
@@ -281,9 +284,9 @@ pipeline {
             export PATH="$CI_TOOLS:$PATH"
             cfg="$CI_ROOT/gitleaks.toml"
             cat > "$cfg" <<'GITLEAKS_CONFIG'
-  [extend]
-  useDefault = true
-  GITLEAKS_CONFIG
+[extend]
+useDefault = true
+GITLEAKS_CONFIG
             gitleaks git . --log-opts='--all --full-history' \
               --config "$cfg" --gitleaks-ignore-path "$CI_ROOT/no-ignore" \
               --ignore-gitleaks-allow --redact=100 --no-banner
@@ -298,33 +301,45 @@ pipeline {
         steps {
           sh '''
             set -euo pipefail
-            export PATH="$CI_TOOLS:$PATH"
+            target="${CHANGE_TARGET:-$BRANCH_NAME}"
+            test "$CI_NATIVE_ARM64" = false || {
+              echo 'STOP: the legacy NATIVE_ARM64 flag must be false.' >&2
+              exit 2
+            }
+            case "$target" in
+              staging|main)
+                python3 -c 'from tools.image_ci import platforms; import sys; sys.exit(set(platforms()) != {"linux/amd64", "linux/arm64"})' || {
+                  echo 'STOP: promotion requires both native platforms.' >&2
+                  exit 2
+                }
+                ;;
+            esac
             if [ -n "${CHANGE_TARGET:-}" ]; then
-              target="$CHANGE_TARGET"
               git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/${target}"
               base="origin/${target}"
             else
-              target="$BRANCH_NAME"
-              # On a branch build CHANGE_TARGET is empty: comparing origin/$BRANCH_NAME
-              # with HEAD is an empty diff and select_image.py silently falls back to
-              # ragnarsec-base-min. Use the previous commit as a real baseline; if the
-              # checkout has no parent, require an explicit IMAGE instead.
-              if ! base="$(git rev-parse --verify HEAD~1 2>/dev/null)"; then
-                echo 'STOP: no inference baseline; select IMAGE explicitly.' >&2
+              if [ -z "$IMAGE" ]; then
+                echo 'STOP: select IMAGE explicitly for a branch build.' >&2
                 exit 2
               fi
+              base=HEAD
             fi
-            # One image per build: explicit parameter wins; otherwise infer from the diff.
-            python3 tools/select_image.py --image "$IMAGE" --base "$base" --head HEAD 2>ragnarsec-ci-image
-            resolved="$(cat ragnarsec-ci-image)"
+            selection="$(python3 tools/select_image.py --image "$IMAGE" --base "$base" --head HEAD)"
+            resolved="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])' <<<"$selection")"
             echo "Resolved image: ${resolved}"
-            # Dependency and build-egress pre-flight; fails before any build.
+            printf '%s\\n' "$resolved" > "$CI_ROOT/image"
             python3 tools/image_ci.py plan --image "$resolved"
             if [ "$target" = "development" ]; then
               echo 'Development build: plan only; full image validation runs on staging.'
             fi
           '''
-          stash name: 'resolved-image', includes: 'ragnarsec-ci-image'
+          script {
+            env.CI_VALIDATION_IMAGE = sh(script: 'cat "$CI_ROOT/image"', returnStdout: true).trim()
+            env.CI_SOURCE_REVISION = sh(script: 'git rev-parse --verify HEAD', returnStdout: true).trim()
+            env.CI_BUILD_DATE = sh(script: "date -u +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
+            def suffix = params.IMAGE_TAG_SUFFIX ? "-${params.IMAGE_TAG_SUFFIX}" : ''
+            env.CI_IMAGE_TAG = "sha-${env.CI_SOURCE_REVISION}-${env.BUILD_NUMBER}${suffix}"
+          }
         }
       }
 
@@ -338,29 +353,66 @@ pipeline {
           expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'main' }
         }
       }
-      // Each platform validates on its native agent with its own checkout and tools.
+      // Each platform validates the same source on its native agent.
       parallel {
         stage('Validate linux/amd64') {
-          agent { label 'ragnarsec-linux' }
           environment { CI_PLATFORM = 'linux/amd64'; CI_RUNNER_ARCH = 'amd64' }
           steps {
             script { validatePlatform() }
-            stash name: 'validation-amd64', includes: 'validation-artifacts/amd64/**'
           }
         }
         stage('Validate linux/arm64') {
           agent { label 'ragnarsec-linux-arm64' }
           environment { CI_PLATFORM = 'linux/arm64'; CI_RUNNER_ARCH = 'arm64' }
           steps {
-            script { validatePlatform() }
-            stash name: 'validation-arm64', includes: 'validation-artifacts/arm64/**'
+            checkout scm
+            script {
+              validatePlatform()
+              dir("${pwd(tmp: true)}/ragnarsec-ci/arm64") {
+                stash name: 'validation-arm64', includes: '*'
+              }
+            }
+          }
+          post {
+            cleanup {
+              dir("${pwd(tmp: true)}/ragnarsec-ci") { deleteDir() }
+            }
           }
         }
       }
     }
 
+    stage('Verify native handoff') {
+      when {
+        anyOf {
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'staging' }
+          expression { (env.CHANGE_TARGET ?: env.BRANCH_NAME) == 'main' }
+        }
+      }
+      steps {
+        dir("${env.CI_ROOT}/arm64") { unstash 'validation-arm64' }
+        sh '''
+          set -euo pipefail
+          python3 tools/ci_docker_endpoint.py
+          python3 tools/validation_handoff.py assemble --image "$CI_VALIDATION_IMAGE" \
+            --tag "$CI_IMAGE_TAG" --revision "$CI_SOURCE_REVISION" --directory "$CI_ROOT" \
+            --output "$VALIDATION_OUTPUT"
+          cat "$CI_ROOT/amd64/validate.log" "$CI_ROOT/arm64/validate.log" > "$CI_ROOT/validate.log"
+          mkdir -m 700 "$WORKSPACE/ci-summary"
+          python3 tools/validation_summary.py --output "$VALIDATION_OUTPUT" --log "$CI_ROOT/validate.log" \
+            --commit "$CI_SOURCE_REVISION" --target "${CHANGE_TARGET:-$BRANCH_NAME}" \
+            --run-url "${BUILD_URL:-}" --write "$WORKSPACE/ci-summary"
+        '''
+        archiveArtifacts artifacts: 'ci-summary/summary.md, ci-summary/summary.json'
+      }
+      post {
+        cleanup {
+          dir('ci-summary') { deleteDir() }
+        }
+      }
+    }
+
     stage('Publish') {
-      agent { label 'ragnarsec-linux' }
       when {
         allOf {
           expression { params.PUBLISH }
@@ -368,29 +420,6 @@ pipeline {
         }
       }
       steps {
-        checkout scm
-        unstash 'resolved-image'
-        // Both platforms validated and built on separate native agents. Bring
-        // their receipts, SBOMs and image bytes together before publish(), which
-        // requires one receipt set covering every requested platform and must be
-        // able to `docker image inspect` each local image.
-        dir('validation-amd64') { unstash 'validation-amd64' }
-        dir('validation-arm64') { unstash 'validation-arm64' }
-        sh '''
-          set -euo pipefail
-          rm -rf "$VALIDATION_OUTPUT"; mkdir -p "$VALIDATION_OUTPUT"
-          cp -R validation-amd64/validation-artifacts/amd64/. "$VALIDATION_OUTPUT/"
-          cp -R validation-arm64/validation-artifacts/arm64/. "$VALIDATION_OUTPUT/"
-          python3 - "$VALIDATION_OUTPUT" <<'PY'
-import json, pathlib, sys
-out = pathlib.Path(sys.argv[1])
-amd = json.loads(pathlib.Path('validation-amd64/validation-artifacts/amd64/validated.json').read_text())
-arm = json.loads(pathlib.Path('validation-arm64/validation-artifacts/arm64/validated.json').read_text())
-(out / 'validated.json').write_text(json.dumps(amd + arm, indent=2) + '\n')
-PY
-          docker load -i validation-amd64/validation-artifacts/amd64/images.tar
-          docker load -i validation-arm64/validation-artifacts/arm64/images.tar
-        '''
         input message: 'Publish the validated digests to the registry?', ok: 'Publish'
         withCredentials([
           usernamePassword(
@@ -404,13 +433,11 @@ PY
           sh '''
             set -euo pipefail
             export PATH="$CI_TOOLS:$PATH"
-            export IMAGE_TAG="$(cat validation-amd64/validation-artifacts/amd64/image-tag)"
-            export IMAGE="$(cat ragnarsec-ci-image)"
             python3 tools/release_signing_guard.py
             export PUBLICATION_ENABLED=true
             printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
-            python3 tools/image_ci.py publish --image "$IMAGE" \
-              --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
+            python3 tools/image_ci.py publish --image "$CI_VALIDATION_IMAGE" \
+              --tag "$CI_IMAGE_TAG" --output "$VALIDATION_OUTPUT"
           '''
         }
       }
@@ -424,9 +451,7 @@ PY
            python3 tools/ci_docker_endpoint.py --config-only >/dev/null 2>&1; then
           docker logout ghcr.io >/dev/null 2>&1 || true
         fi
-        # The pipeline-level agent owns this workspace, so CI_ROOT is set here.
-        # Each parallel validation branch additionally cleans its own agent via
-        # the EXIT trap in validatePlatform(), including the arm64 agent.
+        # This post step cleans the AMD64 workspace. ARM64 has its own post step.
         if [ -n "${CI_ROOT:-}" ]; then
           rm -rf "$CI_ROOT"
         fi
@@ -443,52 +468,43 @@ PY
 
 // Validation of one platform on its native agent. Called from the parallel matrix.
 def validatePlatform() {
-  checkout scm
-  unstash 'resolved-image'
   sh '''
     set -euo pipefail
-    # This stage owns the only workspace on this agent (amd64 or arm64). Clean it
-    # on every outcome, including failures; the pipeline-level post cannot reach
-    # this agent because it uses `agent none`.
-    cleanup_ci_agent() {
-      if [ -n "${CI_ROOT:-}" ]; then rm -rf "$CI_ROOT"; fi
-    }
-    trap cleanup_ci_agent EXIT
     case "$CI_RUNNER_ARCH:$(uname -m)" in
       amd64:x86_64|arm64:aarch64) ;;
       *) echo 'STOP: platform/agent mismatch.' >&2; exit 2 ;;
     esac
-    export IMAGE="$(cat ragnarsec-ci-image)"
     export PLATFORMS="$CI_PLATFORM"
     export CI_NATIVE_ARM64="$([ "$CI_RUNNER_ARCH" = arm64 ] && echo true || echo false)"
     export GIT_COMMIT="$(git rev-parse --verify HEAD)"
-    export BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-    rm -rf "$CI_ROOT"; mkdir -m 700 -p "$CI_ROOT"
+    test "$GIT_COMMIT" = "$CI_SOURCE_REVISION" || {
+      echo 'STOP: native checkout does not match the control revision.' >&2
+      exit 2
+    }
+    export BUILD_DATE="$CI_BUILD_DATE"
+    export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:?}/docker.sock"
+    export CI_ROOT="${WORKSPACE_TMP:?}/ragnarsec-ci"
+    export CI_TOOLS="$CI_ROOT/tools"
+    export DOCKER_CONFIG="$CI_ROOT/docker-auth"
+    export TRIVY_CACHE_DIR="$CI_ROOT/trivy-cache"
+    if [ "$CI_RUNNER_ARCH" = arm64 ]; then
+      rm -rf "$CI_ROOT"
+      mkdir -m 700 "$CI_ROOT"
+    fi
     python3 tools/ci_docker_endpoint.py
-    python3 tools/install_ci_tools.py "$CI_TOOLS"
+    if [ "$CI_RUNNER_ARCH" = arm64 ]; then
+      python3 tools/install_ci_tools.py "$CI_TOOLS"
+    fi
     export PATH="$CI_TOOLS:$PATH"
-    # One tag for both platforms: publish() appends the platform suffix itself,
-    # so per-architecture tags make a single manifest impossible.
-    export IMAGE_TAG="sha-$(git rev-parse HEAD)-${BUILD_NUMBER}"
-    if [ -n "${IMAGE_TAG_SUFFIX:-}" ]; then export IMAGE_TAG="${IMAGE_TAG}-${IMAGE_TAG_SUFFIX}"; fi
-    printf '%s' "$IMAGE_TAG" > "$CI_ROOT/image-tag"
+    output="$CI_ROOT/$CI_RUNNER_ARCH"
     # Trivy extracts large OCI databases; the agent's /tmp may be tmpfs.
     validation_tmp="$(mktemp -d "$CI_ROOT/validation-tmp.XXXXXXXX")"
-    TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate --image "$IMAGE" \
-      --tag "$IMAGE_TAG" --output "$VALIDATION_OUTPUT"
-    # Hand this agent's receipts and image bytes to the Publish agent. Images
-    # live in this agent's Docker daemon, so docker save is required: a stash of
-    # validated.json alone would fail `docker image inspect` at publication.
-    artifact_dir="$WORKSPACE/validation-artifacts/${CI_RUNNER_ARCH}"
-    mkdir -p "$artifact_dir"
-    cp -R "$VALIDATION_OUTPUT/." "$artifact_dir/"
-    cp "$CI_ROOT/image-tag" "$artifact_dir/image-tag"
-    python3 - "$VALIDATION_OUTPUT/validated.json" "$artifact_dir/images.tar" <<'PY'
-import json, pathlib, subprocess, sys
-receipts = json.loads(pathlib.Path(sys.argv[1]).read_text())
-refs = sorted({r['ref'] for r in receipts})
-if refs:
-    subprocess.run(['docker', 'save', '-o', sys.argv[2], *refs], check=True)
-PY
+    TMPDIR="$validation_tmp" RAGNARSEC_REQUIRE_STAGE_EGRESS=1 python3 tools/image_ci.py validate \
+      --image "$CI_VALIDATION_IMAGE" --tag "$CI_IMAGE_TAG" --output "$output" 2>&1 | tee "$CI_ROOT/validate-$CI_RUNNER_ARCH.log"
+    mv "$CI_ROOT/validate-$CI_RUNNER_ARCH.log" "$output/validate.log"
+    if [ "$CI_RUNNER_ARCH" = arm64 ]; then
+      python3 tools/validation_handoff.py pack --image "$CI_VALIDATION_IMAGE" \
+        --tag "$CI_IMAGE_TAG" --revision "$CI_SOURCE_REVISION" --directory "$output"
+    fi
   '''
 }
