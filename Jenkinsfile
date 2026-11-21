@@ -28,7 +28,10 @@
 // - a required status check named after this job, configured in the ruleset.
 
 pipeline {
-  agent none
+  // A pipeline-level agent is required: DOCKER_HOST is derived from
+  // XDG_RUNTIME_DIR in the environment block, which is evaluated before any
+  // stage node with `agent none`. Stages with their own agent override this.
+  agent { label 'ragnarsec-linux' }
 
   options {
     skipDefaultCheckout()
@@ -416,23 +419,18 @@ PY
 
   post {
     always {
-      // The pipeline uses `agent none`, so a bare `sh` here has no workspace.
-      // Allocate an explicit node for the control-agent cleanup. Each parallel
-      // validation branch additionally cleans its own agent via an EXIT trap in
-      // validatePlatform(), so arm64 artifacts are removed on the arm64 agent.
-      script {
-        node('ragnarsec-linux') {
-          sh '''
-            if command -v docker >/dev/null 2>&1 &&
-               python3 tools/ci_docker_endpoint.py --config-only >/dev/null 2>&1; then
-              docker logout ghcr.io >/dev/null 2>&1 || true
-            fi
-            if [ -n "${CI_ROOT:-}" ]; then
-              rm -rf "$CI_ROOT"
-            fi
-          '''
-        }
-      }
+      sh '''
+        if command -v docker >/dev/null 2>&1 &&
+           python3 tools/ci_docker_endpoint.py --config-only >/dev/null 2>&1; then
+          docker logout ghcr.io >/dev/null 2>&1 || true
+        fi
+        # The pipeline-level agent owns this workspace, so CI_ROOT is set here.
+        # Each parallel validation branch additionally cleans its own agent via
+        # the EXIT trap in validatePlatform(), including the arm64 agent.
+        if [ -n "${CI_ROOT:-}" ]; then
+          rm -rf "$CI_ROOT"
+        fi
+      '''
     }
     success {
       echo 'Validation completed for the selected image. See stage logs for control results.'
