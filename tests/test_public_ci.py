@@ -746,10 +746,22 @@ class ToolCustody(unittest.TestCase):
 class JenkinsBoundaries(unittest.TestCase):
     def setUp(self):
         self.pipeline=(ROOT/'Jenkinsfile').read_text()
-    def test_no_github_actions_workflow_or_checkout(self):
-        self.assertFalse((ROOT/'.github/workflows').exists())
+    def test_jenkins_does_not_depend_on_github_actions(self):
         for forbidden in ('actions/checkout','secrets.GITHUB_TOKEN','GITHUB_ACTIONS','workflow_dispatch','ubuntu-24.04'):
             self.assertNotIn(forbidden,self.pipeline)
+
+    def test_only_reviewed_read_only_observer_is_allowed(self):
+        workflows = ROOT / '.github/workflows'
+        observer = workflows / 'jenkins-observer.yml'
+        self.assertEqual(sorted(path.name for path in workflows.iterdir()), [observer.name])
+        self.assertTrue(observer.is_file() and not observer.is_symlink())
+        # Any workflow change requires an explicit boundary review. Jenkins
+        # must not accidentally accept a checkout or a write-capable workflow.
+        self.assertEqual(
+            hashlib.sha256(observer.read_bytes()).hexdigest(),
+            'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
+        )
+
     def test_validation_and_publication_are_separate(self):
         validation=self.pipeline.split("stage('Plan')",1)[1].split("stage('Publish')",1)[0]
         self.assertNotIn('docker login',validation)

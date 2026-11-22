@@ -1,0 +1,83 @@
+name: Observe Jenkins promotion status
+
+"on":
+  status:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Open pull request number to inspect
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+
+jobs:
+  observe:
+    name: Report only — not a merge gate
+    if: >-
+      github.repository == 'yonrasgg/ragnarsec-hardened-images' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.context == 'continuous-integration/jenkins/pr-head')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Read current GitHub metadata without changing state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repo=yonrasgg/ragnarsec-hardened-images
+          context=continuous-integration/jenkins/pr-head
+          expected_actor='ragnarsec-jenkins-ci[bot]'
+          [[ "$GITHUB_REPOSITORY" == "$repo" && "$GITHUB_REF" == refs/heads/main ]] || exit 2
+          get() { gh api --hostname github.com --method GET "repos/$repo/$1"; }
+          note() { printf 'observer=%s merge_authorized=false\n' "$1"; }
+          if [[ "$GITHUB_EVENT_NAME" == status ]]; then
+            [[ "$(jq -er '.context' "$GITHUB_EVENT_PATH")" == "$context" ]] || exit 2
+            head=$(jq -er '.sha' "$GITHUB_EVENT_PATH")
+            [[ "$head" =~ ^[a-f0-9]{40}$ ]] || exit 2
+            found=$(get "commits/$head/pulls?per_page=100")
+            if [[ "$(jq -er 'length' <<<"$found")" -ge 100 ]]; then note truncated_associations; exit 0; fi
+            candidates=$(jq -c --arg r "$repo" --arg h "$head" '
+              [.[] | select(.state=="open" and .draft==false and .head.sha==$h and
+              .head.repo.full_name==$r and .base.repo.full_name==$r and
+              (.base.ref | IN("development","staging","main")))]' <<<"$found")
+            if [[ "$(jq -er 'length' <<<"$candidates")" != 1 ]]; then note missing_or_ambiguous_pr; exit 0; fi
+            number=$(jq -er '.[0].number' <<<"$candidates")
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            number=$(jq -er '.inputs.pr' "$GITHUB_EVENT_PATH")
+          else
+            exit 2
+          fi
+          [[ "$number" =~ ^[1-9][0-9]{0,9}$ ]] || exit 2
+          pr=$(get "pulls/$number")
+          if ! jq -e --arg r "$repo" '
+            .state=="open" and .draft==false and .head.repo.full_name==$r and
+            .base.repo.full_name==$r and (.base.ref|IN("development","staging","main"))' <<<"$pr" >/dev/null; then
+            note unsupported_pr
+            exit 0
+          fi
+          live=$(jq -er '.head.sha' <<<"$pr")
+          base=$(jq -er '.base.ref' <<<"$pr")
+          revision=$(jq -er '.base.sha' <<<"$pr")
+          [[ "$live" =~ ^[a-f0-9]{40}$ && "$revision" =~ ^[a-f0-9]{40}$ ]] || exit 2
+          if [[ "$GITHUB_EVENT_NAME" == status && "$live" != "$head" ]]; then note stale_event; exit 0; fi
+          statuses=$(get "commits/$live/statuses?per_page=100")
+          if [[ "$(jq -er 'length' <<<"$statuses")" -ge 100 ]]; then note truncated_status_list; exit 0; fi
+          latest=$(jq -c --arg c "$context" '[.[]|select(.context==$c)] | first // {}' <<<"$statuses")
+          current_base=$(get "git/ref/heads/$base" | jq -er '.object.sha')
+          if [[ "$current_base" != "$revision" ]]; then note changed_base; exit 0; fi
+          if [[ "$latest" == '{}' ]]; then note missing_jenkins_status; exit 0; fi
+          if [[ "$(jq -r '.creator.login // ""' <<<"$latest")" != "$expected_actor" ]]; then
+            note untrusted_latest_issuer
+            exit 0
+          fi
+          state=$(jq -er '.state | select(IN("success","pending","failure","error"))' <<<"$latest")
+          printf 'pr=%s target=%s head=%s base=%s jenkins_status=%s\n' "$number" "$base" "$live" "$revision" "$state"
+          if [[ "$base" == staging ]]; then note owner_staging_review_only; exit 0; fi
+          if [[ "$state" == success ]]; then note observed_success_without_controller_binding; else note observed_not_green; fi
