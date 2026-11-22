@@ -30,5 +30,4 @@ WORKDIR /var/lib/alertmanager
 # Expose default port
 EXPOSE 9093
 
-ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["alertmanager", "--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/var/lib/alertmanager"]
