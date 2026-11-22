@@ -3,6 +3,13 @@ schemaVersion: 2.0.0
 metadataTest:
   user: ragnarsec
   workdir: /var/lib/prometheus
+  entrypoint: ["/sbin/tini", "--"]
+  cmd:
+    - prometheus
+    - --config.file=/etc/prometheus/prometheus.yml
+    - --storage.tsdb.path=/var/lib/prometheus
+    - --web.console.libraries=/usr/share/prometheus/console_libraries
+    - --web.console.templates=/usr/share/prometheus/consoles
 
 fileExistenceTests:
   - name: 'Prometheus Binary'
@@ -18,3 +25,18 @@ commandTests:
     args: ['--version']
     exitCode: 0
     expectedOutput: ['prometheus']
+  - name: 'Prometheus Bundled Config'
+    command: 'promtool'
+    args: ['check', 'config', '/etc/prometheus/prometheus.yml']
+    exitCode: 0
+  - name: 'Reviewed APK Versions'
+    command: 'apk'
+    args: ['--no-network', '--repositories-file', '/dev/null', 'info', '-v']
+    exitCode: 0
+    expectedOutput:
+      - '(?m)^apk-tools-3\.0\.9-r0$'
+      - '(?m)^libapk-3\.0\.9-r0$'
+      - '(?m)^libcrypto3-3\.5\.9-r1$'
+      - '(?m)^libssl3-3\.5\.9-r1$'
+      - '(?m)^prometheus-3\.5\.3-r3$'
+      - '(?m)^zlib-1\.4-r0$'
