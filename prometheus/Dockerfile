@@ -17,10 +17,14 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 
 USER root
 
-# SECURITY: Upgrade system packages first
-# hadolint ignore=DL3018
-RUN apk upgrade --no-cache && \
-    apk add --no-cache prometheus && \
+# Refresh the security-sensitive packages inherited from the pinned Alpine base.
+RUN apk add --no-cache \
+        apk-tools=3.0.9-r0 \
+        libapk=3.0.9-r0 \
+        libcrypto3=3.5.9-r1 \
+        libssl3=3.5.9-r1 \
+        prometheus=3.5.3-r3 \
+        zlib=1.4-r0 && \
     mkdir -p /etc/prometheus /var/lib/prometheus && \
     chown -R ragnarsec:ragnarsec /etc/prometheus /var/lib/prometheus
 
@@ -30,7 +34,7 @@ WORKDIR /var/lib/prometheus
 # Expose default port
 EXPOSE 9090
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# The base provides the tini entrypoint.
 CMD ["prometheus", \
      "--config.file=/etc/prometheus/prometheus.yml", \
      "--storage.tsdb.path=/var/lib/prometheus", \
