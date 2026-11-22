@@ -23,6 +23,23 @@ with multiple receipts, or use the Trivy license-severity tally as a security
 verdict. A failed or pending replacement cannot be hidden by selecting an old
 success. Do not derive the policy revision from untrusted PR code.
 
+### Jenkins input artifact
+
+For PRs to `development`, `staging` or `main`, Jenkins resolves the fetched
+target and checkout to commit IDs before planning. The planner receives those
+IDs, not moving refs. The same IDs, PR number, target, selected image, build
+number and `PUBLISH` request are archived as `ci-summary/validation-context.json`.
+This is an input record, not a proof of build, tests, signature, or success.
+The collector must verify the actual job metadata, policy revision, native
+receipts and terminal result independently. It must read the live target ref
+separately from the PR response, and fail closed if that ref differs.
+
+The artifact does not alter the stage routes: successful PRs enter
+`development` first; the owner reviews and runs `development → staging`;
+`staging → main` remains the intended direct automated route after enforcement
+is proven. Failed validation does not trigger a protected push, bypass or
+history rewrite.
+
 ## Runtime acceptance still required
 
 1. Compare a live Actions `status` observation to an authentic exact-head Jenkins
@@ -51,3 +68,8 @@ Reference: [GitHub merge queue CI requirements](https://docs.github.com/en/repos
   include one green out of two, wrong base with the same head, a stale candidate
   or policy, wrong PR/issuer, missing or duplicate native receipts, and
   unsuccessful or publication-enabled runs.
+- Follow-up RED: `test_public_validation_context.py` could not import the
+  missing artifact producer. GREEN: six focused tests, 98.1% executable lines
+  with Python trace; full suite 188 passed, one existing skip. Tests cover
+  precise coordinates, invalid or moving-ref values and refusing to overwrite
+  an existing artifact. GitHub server-side merge enforcement is still separate.

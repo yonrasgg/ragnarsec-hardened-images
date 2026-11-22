@@ -1,10 +1,13 @@
 """The promotion collector must be able to identify the actual Jenkins inputs."""
+from contextlib import redirect_stderr
+import io
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -52,6 +55,24 @@ class ValidationContext(unittest.TestCase):
             second = subprocess.run(args, capture_output=True, text=True)
             self.assertNotEqual(second.returncode, 0)
             self.assertEqual(artifact.read_bytes(), before)
+
+    def test_cli_captures_true_and_rejects_an_unpinned_base_before_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = Path(tmp) / 'validation-context.json'
+            args = ['validation_context.py', '--write', str(artifact), '--pull-request', '150',
+                    '--head-sha', 'a' * 40, '--base-sha', 'origin/main', '--target', 'main',
+                    '--image', 'ragnarsec-prometheus', '--build-number', '1',
+                    '--publish-requested', 'true']
+            with patch.object(sys, 'argv', args), redirect_stderr(io.StringIO()) as output:
+                with self.assertRaises(SystemExit) as stop:
+                    ctx.main()
+            self.assertEqual(stop.exception.code, 2)
+            self.assertIn('invalid-plan-revision', output.getvalue())
+            self.assertFalse(artifact.exists())
+            args[args.index('--base-sha') + 1] = 'b' * 40
+            with patch.object(sys, 'argv', args):
+                ctx.main()
+            self.assertIs(json.loads(artifact.read_text())['publish_requested'], True)
 
     def test_pipeline_plans_and_archives_the_same_frozen_revision(self):
         source = (ROOT / 'Jenkinsfile').read_text()
