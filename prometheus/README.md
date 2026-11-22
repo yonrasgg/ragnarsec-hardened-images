@@ -17,7 +17,9 @@ support status of upstream versions must be checked before building.
 ## Hardening declared
 
 - Last `USER` instruction: `ragnarsec`; verify the effective image user after building.
-- The Dockerfile invokes `apk upgrade` during build.
+- Prometheus and selected inherited Alpine packages are explicitly pinned in the
+  Dockerfile and [`versions.json`](../versions.json). The base supplies the
+  `tini` entrypoint.
 - Permission or ownership adjustments are present; review their exact paths and effect in the Dockerfile.
 
 These are static observations, not proof of runtime isolation or vulnerability remediation.
@@ -37,7 +39,8 @@ time-bounded exceptions. A successful package upgrade does not prove all CVEs ar
 | Publication boundary and secret scanning | Repository guard, hooks and CI definitions; require a successful run for the release commit. |
 | Image test definitions | `../tests/ragnarsec-prometheus.yaml`; execution not evidenced by this documentation. |
 
-Defined test cases: `Prometheus Version`, `Prometheus Binary`, `Prometheus Config`.
+The tests check the inherited entrypoint, default command, bundled config, and
+installed APK versions in addition to the Prometheus binary and version.
 
 No built-image pass, SBOM, signature, multi-architecture result or runtime smoke-test
 receipt is attached to this documentation update. Do not treat the catalog as an approval.
