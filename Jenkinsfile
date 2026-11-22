@@ -98,6 +98,7 @@ pipeline {
     IMAGE = "${params.IMAGE ?: ''}"
     PLATFORMS = "${params.PLATFORMS}"
     CI_NATIVE_ARM64 = "${params.NATIVE_ARM64 == true ? 'true' : 'false'}"
+    CI_PUBLISH_REQUESTED = "${params.PUBLISH == true ? 'true' : 'false'}"
     CI_ROOT = "${WORKSPACE_TMP}/ragnarsec-ci"
     CI_TOOLS = "${WORKSPACE_TMP}/ragnarsec-ci/tools"
     VALIDATION_OUTPUT = "${WORKSPACE_TMP}/ragnarsec-ci/image-validation"
@@ -302,6 +303,7 @@ GITLEAKS_CONFIG
           sh '''
             set -euo pipefail
             target="${CHANGE_TARGET:-$BRANCH_NAME}"
+            head="$(git rev-parse --verify "HEAD^{commit}")"
             test "$CI_NATIVE_ARM64" = false || {
               echo 'STOP: the legacy NATIVE_ARM64 flag must be false.' >&2
               exit 2
@@ -316,29 +318,49 @@ GITLEAKS_CONFIG
             esac
             if [ -n "${CHANGE_TARGET:-}" ]; then
               git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/${target}"
-              base="origin/${target}"
+              base="$(git rev-parse --verify "refs/remotes/origin/${target}^{commit}")"
             else
               if [ -z "$IMAGE" ]; then
                 echo 'STOP: select IMAGE explicitly for a branch build.' >&2
                 exit 2
               fi
-              base=HEAD
+              base="$head"
             fi
-            selection="$(python3 tools/select_image.py --image "$IMAGE" --base "$base" --head HEAD)"
+            selection="$(python3 tools/select_image.py --image "$IMAGE" --base "$base" --head "$head")"
             resolved="$(printf '%s' "$selection" | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
             echo "Resolved image: ${resolved}"
             printf '%s\\n' "$resolved" > "$CI_ROOT/image"
+            printf '%s\\n' "$head" > "$CI_ROOT/head"
             python3 tools/image_ci.py plan --image "$resolved"
+            if [ -n "${CHANGE_TARGET:-}" ]; then
+              case "$target" in
+                development|staging|main)
+                  mkdir -m 700 "$WORKSPACE/ci-summary"
+                  python3 tools/validation_context.py --base-sha "$base" --head-sha "$head" \
+                    --pull-request "${CHANGE_ID:-}" --target "$target" --image "$resolved" \
+                    --build-number "$BUILD_NUMBER" --publish-requested "$CI_PUBLISH_REQUESTED" \
+                    --write "$WORKSPACE/ci-summary/validation-context.json"
+                  ;;
+              esac
+            fi
             if [ "$target" = "development" ]; then
               echo 'Development build: plan only; full image validation runs on staging.'
             fi
           '''
           script {
+            if (env.CHANGE_TARGET in ['development', 'staging', 'main']) {
+              archiveArtifacts artifacts: 'ci-summary/validation-context.json'
+            }
             env.CI_VALIDATION_IMAGE = sh(script: 'cat "$CI_ROOT/image"', returnStdout: true).trim()
-            env.CI_SOURCE_REVISION = sh(script: 'git rev-parse --verify HEAD', returnStdout: true).trim()
+            env.CI_SOURCE_REVISION = sh(script: 'cat "$CI_ROOT/head"', returnStdout: true).trim()
             env.CI_BUILD_DATE = sh(script: "date -u +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
             def suffix = params.IMAGE_TAG_SUFFIX ? "-${params.IMAGE_TAG_SUFFIX}" : ''
             env.CI_IMAGE_TAG = "sha-${env.CI_SOURCE_REVISION}-${env.BUILD_NUMBER}${suffix}"
+          }
+        }
+        post {
+          cleanup {
+            dir('ci-summary') { deleteDir() }
           }
         }
       }
