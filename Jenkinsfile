@@ -172,6 +172,19 @@ pipeline {
                 exit 2
               }
             }
+            # Scoped recovery for PR-164. The current source must be precisely
+            # one reviewed squash after its frozen tip, and the signed sync
+            # candidate must reproduce that source tree on the frozen target.
+            require_pr164_sync() {
+              sync_head="$1" sync_target="$2" sync_base="$3" sync_source="$4" sync_source_parent="$5"
+              require_one_time_sync "$sync_head" "$sync_target" "$sync_base" "$sync_source"
+              source_tip="$(git rev-parse "origin/${sync_source}")"
+              test "$(git rev-list --parents -n 1 "$source_tip")" = "$source_tip $sync_source_parent" &&
+              test "$(git rev-list --parents -n 1 "$sync_head")" = "$sync_head $sync_base" || {
+                echo 'STOP: PR-164 recovery expired or has unexpected source/target parents.' >&2
+                exit 2
+              }
+            }
             target="${CHANGE_TARGET:-$BRANCH_NAME}"
             if [ -n "${CHANGE_TARGET:-}" ]; then
               source="${CHANGE_BRANCH:-}"
@@ -203,6 +216,9 @@ pipeline {
                       echo 'STOP: staging sync must have exactly the pinned staging parent.' >&2
                       exit 2
                     }
+                  elif [ "$source" = "sync/development-to-staging-pr164-repair-20261123" ]; then
+                    require_pr164_sync "$head" staging e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26 \
+                      development 40c82e789bad5895b730a92ffba2ee8838aeaf4a
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -220,6 +236,9 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-vex-20261103" ]; then
                     require_one_time_sync "$head" main \
                       faaf17460b6e828c02e455665015fb05828b1c87 staging
+                  elif [ "$source" = "sync/staging-to-main-pr164-repair-20261123" ]; then
+                    require_pr164_sync "$head" main f0a1d6f044406d04e0410016985c638b04b4e47f \
+                      staging e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -261,6 +280,31 @@ pipeline {
             python3 -m unittest discover -s tests -p 'test_public*.py'
             python3 tools/publication_guard.py . --history
           '''
+        }
+      }
+
+      stage('Promotion route') {
+        when { expression { env.CHANGE_TARGET == 'development' } }
+        steps {
+          dir('ci-route') { deleteDir() }
+          sh '''
+            set -euo pipefail
+            mkdir -m 700 ci-route
+            set -- --source "$CHANGE_BRANCH"
+            if [ "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" = \
+                 'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight' ]; then
+              set -- "$@" --approved-reconciliation
+            fi
+            python3 tools/jenkins_promotion_route.py "$@" | tee ci-route/promotion-route.json
+          '''
+        }
+        post {
+          always {
+            archiveArtifacts artifacts: 'ci-route/promotion-route.json'
+          }
+          cleanup {
+            dir('ci-route') { deleteDir() }
+          }
         }
       }
 
@@ -320,13 +364,13 @@ GITLEAKS_CONFIG
               git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/${target}"
               base="origin/${target}"
             else
-              if [ -z "$IMAGE" ]; then
+              if [ -z "${IMAGE:-}" ]; then
                 echo 'STOP: select IMAGE explicitly for a branch build.' >&2
                 exit 2
               fi
               base=HEAD
             fi
-            selection="$(python3 tools/select_image.py --image "$IMAGE" --base "$base" --head HEAD)"
+            selection="$(python3 tools/select_image.py --image "${IMAGE:-}" --base "$base" --head HEAD)"
             resolved="$(printf '%s' "$selection" | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
             echo "Resolved image: ${resolved}"
             printf '%s\\n' "$resolved" > "$CI_ROOT/image"
