@@ -39,7 +39,8 @@ class PromotionRoute(unittest.TestCase):
         current = self.git('rev-parse', 'HEAD')
         result = subprocess.run([
             sys.executable, str(TOOL), '--repository', str(self.repo),
-            '--development', development, '--staging', staging, '--main', main, *extra,
+            '--staging', staging, '--main', main,
+            *(['--development', development] if development is not None else []), *extra,
         ], capture_output=True, text=True)
         self.assertEqual(self.git('show-ref'), refs)
         self.assertEqual(self.git('rev-parse', 'HEAD'), current)
@@ -60,6 +61,11 @@ class PromotionRoute(unittest.TestCase):
         candidate = report['phases'][-1]['tree']
         self.assertEqual(self.git('show', f'{candidate}:app'), 'release')
         self.assertEqual(self.git('show', f'{candidate}:live'), 'preserve')
+        staged, released = report['phases']
+        self.assertFalse(staged['source_tree_matches'])
+        self.assertFalse(released['source_tree_matches'])
+        self.assertEqual(self.git('rev-parse', staged['simulated_candidate_sha'] + '^'), staging)
+        self.assertEqual(released['head_sha'], staged['simulated_candidate_sha'])
 
     def test_does_not_attempt_main_if_the_staging_squash_conflicts(self):
         development = self.fork(self.base, 'Jenkinsfile', 'dev plan\n')
@@ -86,8 +92,37 @@ class PromotionRoute(unittest.TestCase):
         self.assertEqual(report['phases'][0]['lane'], 'fix-to-development')
         self.assertEqual(len(report['phases']), 1)
 
+    def test_equal_staging_tree_keeps_the_actual_tip(self):
+        staging = self.fork(self.base, 'app', 'release\n')
+        development = self.fork(self.base, 'app', 'release\n')
+        code, report = self.run_route(development, staging, self.base)
+        self.assertEqual(code, 0)
+        self.assertIs(report['phases'][0]['no_op'], True)
+        self.assertIs(report['phases'][0]['source_tree_matches'], True)
+        self.assertEqual(report['phases'][1]['head_sha'], staging)
+
+    def test_actual_staging_mode_checks_only_the_frozen_tip(self):
+        staging = self.fork(self.base, 'app', 'release\n')
+        code, report = self.run_route(None, staging, self.base, '--staging-to-main-only')
+        self.assertEqual(code, 0)
+        self.assertEqual(set(report['inputs']), {'staging', 'main'})
+        self.assertEqual([phase['lane'] for phase in report['phases']], ['staging-to-main'])
+        code, report = self.run_route(self.base, staging, self.base, '--staging-to-main-only')
+        self.assertEqual(code, 2)
+        self.assertEqual(report['phases'], [])
+
+    def test_conflict_paths_preserve_names_with_newlines(self):
+        name = 'line\nbreak'
+        common = self.change(name, 'base\n')
+        development = self.fork(common, name, 'dev\n')
+        staging = self.fork(common, name, 'staging\n')
+        code, report = self.run_route(development, staging, common)
+        self.assertEqual(code, 1)
+        self.assertEqual(report['phases'][0]['conflict_paths'], [name])
+
     def test_requires_full_existing_commit_ids(self):
-        for value in ('HEAD', 'f' * 40):
+        self.git('tag', '-a', 'fixture', '-m', 'annotated')
+        for value in ('HEAD', 'f' * 40, self.git('rev-parse', 'fixture')):
             with self.subTest(value=value):
                 code, report = self.run_route(value, self.base, self.base)
                 self.assertEqual(code, 2)
