@@ -74,16 +74,34 @@ class ValidationContext(unittest.TestCase):
                 ctx.main()
             self.assertIs(json.loads(artifact.read_text())['publish_requested'], True)
 
-    def test_pipeline_plans_and_archives_the_same_frozen_revision(self):
+    def test_selector_freezes_revisions_and_pipeline_archives_the_input_record(self):
         source = (ROOT / 'Jenkinsfile').read_text()
-        plan = source.split("stage('Plan')", 1)[1].split("stage('Validate')", 1)[0]
-        self.assertIn('git rev-parse --verify "refs/remotes/origin/${target}^{commit}"', plan)
-        self.assertIn('git rev-parse --verify "HEAD^{commit}"', plan)
-        self.assertIn('tools/select_image.py --image "$IMAGE" --base "$base" --head "$head"', plan)
-        self.assertIn('tools/validation_context.py', plan)
-        self.assertIn('--base-sha "$base" --head-sha "$head"', plan)
-        self.assertIn('--publish-requested "$CI_PUBLISH_REQUESTED"', plan)
-        self.assertIn("archiveArtifacts artifacts: 'ci-summary/validation-context.json'", plan)
+        plan = (ROOT / 'tools/image_ci.py').read_text()
+        self.assertIn('capture_plan_inputs(args.image, os.environ)', plan)
+        self.assertIn("archiveArtifacts artifacts: 'ci-summary/validation-context.json'", source)
+        post = source.split('\n  post {', 1)[1]
+        self.assertLess(post.index("archiveArtifacts artifacts: 'ci-summary/validation-context.json'"),
+                        post.index('rm -rf "$CI_ROOT"'))
+
+    def test_replanned_image_and_refs_must_match_before_capture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(CHANGE_TARGET='development', CHANGE_ID='150', BUILD_NUMBER='1',
+                       CI_PUBLISH_REQUESTED='false', CI_ROOT=tmp, IMAGE='')
+            artifact = Path(tmp) / 'validation-context.json'
+            for revisions, image in (
+                (['b'*40, 'a'*40, 'c'*40, 'a'*40], 'ragnarsec-base-min'),
+                (['b'*40, 'a'*40, 'b'*40, 'a'*40], 'ragnarsec-other'),
+            ):
+                with patch.object(ctx, 'resolve_revision', side_effect=revisions), \
+                        patch('select_image.changed_paths', return_value=['Jenkinsfile']):
+                    with self.assertRaisesRegex(ValueError, 'plan-revision-or-image-changed'):
+                        ctx.capture_plan_inputs(image, env)
+                self.assertFalse(artifact.exists())
+            with patch.object(ctx, 'resolve_revision', side_effect=['b'*40, 'a'*40]*2), \
+                    patch('select_image.changed_paths', return_value=['Jenkinsfile']) as paths:
+                ctx.capture_plan_inputs('ragnarsec-base-min', env)
+                paths.assert_called_once_with('b'*40, 'a'*40)
+            self.assertEqual(json.loads(artifact.read_text()), ctx.build_context(**self.inputs))
 
 
 if __name__ == '__main__':
