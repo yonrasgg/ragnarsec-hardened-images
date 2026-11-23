@@ -79,6 +79,19 @@ never open an issue containing a credential or confidential reproduction.
 
 ### Promotion preflight
 
+Before opening any pull request into `staging` or `main`, verify the published
+source and target tips and every incoming commit's GitHub signature. An
+unsigned or unverifiable commit blocks draft creation and Jenkins dispatch.
+Recheck the exact SHAs before validation. Signing or replacing a commit changes
+its SHA and requires new checks; a successful check never transfers to it.
+For the standard `development` to `staging` transition after fetching:
+
+```sh
+python3 tools/promotion_signatures.py --source development --target staging \
+  --head "$(git rev-parse refs/remotes/origin/development)" \
+  --base "$(git rev-parse refs/remotes/origin/staging)"
+```
+
 Run the [route checker](tools/promotion_route.py) with Git 2.38 or newer from a
 trusted, complete checkout. Fetch the three branch tips together, simulate both
 squashes, and record the JSON receipt:
