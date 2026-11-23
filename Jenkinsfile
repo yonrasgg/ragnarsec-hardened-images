@@ -290,12 +290,12 @@ pipeline {
           sh '''
             set -euo pipefail
             mkdir -m 700 ci-route
-            args=(--source "$CHANGE_BRANCH")
+            set -- --source "$CHANGE_BRANCH"
             if [ "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" = \
                  'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight' ]; then
-              args+=(--approved-reconciliation)
+              set -- "$@" --approved-reconciliation
             fi
-            python3 tools/jenkins_promotion_route.py "${args[@]}" | tee ci-route/promotion-route.json
+            python3 tools/jenkins_promotion_route.py "$@" | tee ci-route/promotion-route.json
           '''
         }
         post {

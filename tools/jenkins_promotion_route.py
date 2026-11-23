@@ -13,7 +13,7 @@ from promotion_route import OID, PreflightError, Repository, RouteConflict
 SOURCE = re.compile(r'fix/[a-zA-Z0-9][a-zA-Z0-9._-]*')
 ROUTE = Path(__file__).resolve().with_name('promotion_route.py')
 RECONCILIATION_SOURCE = 'fix/automated-promotion-preflight'
-RECONCILIATION_PARENT = '8727a085679c405f93d48af3134c766d401a8a8b'
+RECONCILIATION_PARENT = '1ba8a2ae90dc778ff0483535f9a31f8ba4d6f464'
 RECONCILIATION_BASES = {
     'development': '40c82e789bad5895b730a92ffba2ee8838aeaf4a',
     'staging': 'e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26',

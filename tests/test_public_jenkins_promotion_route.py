@@ -145,6 +145,9 @@ class JenkinsPromotionRoute(unittest.TestCase):
         self.assertIn('set -euo pipefail', stage)
         self.assertIn('python3 tools/jenkins_promotion_route.py', stage)
         self.assertIn("archiveArtifacts artifacts: 'ci-route/promotion-route.json'", stage)
+        shell = stage.split("sh '''", 1)[1].split("'''", 1)[0]
+        result = subprocess.run(['sh', '-n'], input=shell, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_actions_has_read_only_automatic_triggers_and_base_checkout(self):
         workflow = (ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
