@@ -750,11 +750,12 @@ class JenkinsBoundaries(unittest.TestCase):
         for forbidden in ('actions/checkout','secrets.GITHUB_TOKEN','GITHUB_ACTIONS','workflow_dispatch','ubuntu-24.04'):
             self.assertNotIn(forbidden,self.pipeline)
 
-    def test_only_reviewed_read_only_workflows_are_allowed(self):
+    def test_only_reviewed_workflows_are_allowed(self):
         workflows = ROOT / '.github/workflows'
-        # Any workflow change requires an explicit boundary review. Jenkins
-        # remains independent; Actions may read only the protected policy.
+        # Jenkins is independent. The only Actions write path is an opt-in
+        # squash to development; its controller and safety checks are tested.
         reviewed = {
+            'development-autosquash.yml': 'd43cc23cc04c0101684b8ef4025b389f40c67dad411bd559ce0406d79000b829',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
             'promotion-route-preflight.yml': 'aab6c64704aa019bf81a21e6b6e79340e91dc727bd91feddee6a1f543dac1629',
         }

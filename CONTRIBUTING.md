@@ -166,6 +166,24 @@ the protected environment. No persistent Actions artifact uploads or cross-run
 caches are configured. Cost/billing settings are managed outside this catalog;
 workflow limits alone do not prove an account spending cap.
 
+The development squash write job is off by default. The workflow follows Jenkins success
+events and can squash only a same-repository `fix/*` PR into `development`.
+It requires signed commits and two server-enforced strict Jenkins checks from the approved App:
+the normal result and `continuous-integration/jenkins/development-plan-binding`,
+both for the same run. The trusted binding publisher must validate the actual
+plan receipt (`PUBLISH=false`) and report `pr=<number>;base=<commit>;run=<number>`
+on the reviewed head. This workflow does not implement or impersonate that publisher.
+An ordinary green without that binding does not enable a squash.
+
+Before setting `RAGNARSEC_AUTO_SQUASH_DEVELOPMENT=true`, qualify the publisher
+and run a protected server test with positive, stale-head, stale-base, and
+retargeted PR cases. GitHub's merge endpoint cannot compare the requested base
+branch, so the workflow requires an active update rule barring its app token
+from updating branches other than `development`. Missing rule or bypass
+metadata stops it. The workflow does not use an admin bypass, enqueue an auto-merge,
+or write statuses. To stop the write job, disable the variable and cancel
+any in-progress write job. This does not automate `staging`, `main`, or Publish.
+
 Before promotion, also run `python3 tools/publication_guard.py . --history`
 against a complete checkout. Deleting an internal file at the tip is insufficient
 if it remains in the history being published. A shallow checkout cannot pass
