@@ -86,6 +86,31 @@ def check_write_scope(get):
     raise Blocked('github-does-not-scope-actions-writes-to-development')
 
 
+def signed_current_history(get, head_commit, base, head):
+    def verified(commit):
+        sig = commit['commit']['verification']
+        return sig.get('verified') is True and sig.get('reason') == 'valid'
+
+    if not verified(head_commit) or head_commit.get('sha') != head:
+        return False
+    if [p['sha'] for p in head_commit['parents']] == [base]:
+        return True
+    linear = get(f'compare/{base}...{head}?per_page=100')
+    commits = linear.get('commits', [])
+    if (linear.get('status') != 'ahead' or linear.get('behind_by') != 0
+            or (linear.get('merge_base_commit') or {}).get('sha') != base
+            or type(linear.get('ahead_by')) is not int
+            or not 1 < len(commits) == linear['ahead_by'] < 100):
+        return False
+    previous = base
+    for commit in commits:
+        if (not sha(commit.get('sha')) or not verified(commit)
+                or [p['sha'] for p in commit['parents']] != [previous]):
+            return False
+        previous = commit['sha']
+    return previous == head
+
+
 def read_plan(get, event):
     """Read from GitHub only. Never follow a Jenkins URL supplied by a status."""
     head, sender = event.get('sha'), event.get('sender') or {}
@@ -110,10 +135,8 @@ def read_plan(get, event):
     src = get(f'commits/{head}')
     test_merge = get(f'git/commits/{candidate}')
     tree = src['commit']['tree']['sha']
-    verification = src['commit']['verification']
-    require(verification.get('verified') is True and verification.get('reason') == 'valid'
-            and src.get('sha') == head and sha(tree)
-            and [p['sha'] for p in src['parents']] == [base], 'not-a-signed-current-base-fix')
+    require(sha(tree) and signed_current_history(get, src, base, head),
+            'not-a-signed-current-base-fix')
     require(test_merge.get('sha') == candidate and test_merge['tree']['sha'] == tree
             and [p['sha'] for p in test_merge['parents']] == [base, head], 'candidate-mismatch')
     check_rules(get('rules/branches/development'))

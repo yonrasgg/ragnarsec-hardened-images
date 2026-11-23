@@ -82,6 +82,20 @@ class DevelopmentAutosquashTests(unittest.TestCase):
                 with self.assertRaisesRegex(Blocked, 'github-does-not-enforce'):
                     read_plan(self.get, self.event)
 
+    def test_signed_linear_fix_can_have_multiple_commits(self):
+        intermediate = '2' * 40
+        head = self.data[f'commits/{self.head}']
+        first = dict(head, sha=intermediate)
+        head['parents'] = [{'sha': intermediate}]
+        path = f'compare/{self.base}...{self.head}?per_page=100'
+        self.data[path] = dict(status='ahead', behind_by=0, ahead_by=2,
+                               merge_base_commit={'sha': self.base},
+                               commits=[deepcopy(first), deepcopy(head)])
+        self.assertEqual(read_plan(self.get, self.event)['head'], self.head)
+        self.data[path]['commits'][0]['commit']['verification']['verified'] = False
+        with self.assertRaisesRegex(Blocked, 'not-a-signed-current-base-fix'):
+            read_plan(self.get, self.event)
+
     def test_no_staging_main_or_fork_automation(self):
         all_prs = self.data[self.association]
         for ref in ('staging', 'main'):
