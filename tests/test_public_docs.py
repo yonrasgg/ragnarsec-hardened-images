@@ -74,6 +74,8 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('closed unmerged and returned to the sender', text)
         self.assertIn('Missing, pending, or stale evidence blocks the promotion', text)
         self.assertIn('the owner performs the protected squash', text)
+        self.assertIn('squash to `main` is intended to be automatic only after', text)
+        self.assertIn('leave automation disabled rather than weakening protection', text)
         self.assertIn('Do not use GitHub Rebase and Merge as a substitute', text)
         self.assertIn('tools/promotion_route.py', text)
         self.assertIn('`--staging-to-main-only`', text)

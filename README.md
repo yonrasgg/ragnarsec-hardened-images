@@ -115,8 +115,10 @@ mutable `latest` promotion is configured.
 
 The order is never skipped. Failed promotions return to `development` for a
 corrected change; no image is published merely because a pull request merged.
-Use protected, owner-operated squash pull requests for promotions. Check both
-transitions before promotion; see the [promotion preflight](CONTRIBUTING.md#promotion-preflight).
+Check both protected squash transitions before promotion. The owner reviews and
+squashes into `staging`; promotion to `main` is intended to be automatic only
+after the required GitHub enforcement is proven. See the
+[promotion preflight](CONTRIBUTING.md#promotion-preflight).
 
 ## Using a published image
 

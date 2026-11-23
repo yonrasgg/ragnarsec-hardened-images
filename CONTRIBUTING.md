@@ -43,10 +43,12 @@ Promotion is linear:
    After human review, the owner performs the protected squash and verifies the
    resulting commit signature and expected tree.
 3. Draft pull request `staging` -> `main`: recheck the actual `staging` head and
-   current `main` base and qualify the exact candidate again. The owner performs
-   the protected squash only after all required evidence passes. Publication is
-   a separate run on the approved `main` revision with `PUBLISH` and the Jenkins
-   approval step; deployment is not part of either squash.
+   current `main` base and qualify the exact candidate again. The protected
+   squash to `main` is intended to be automatic only after required GitHub
+   enforcement is proven to reject stale or incomplete evidence for that route.
+   Until then, leave automation disabled rather than weakening protection.
+   Publication is a separate run on the approved `main` revision with `PUBLISH`
+   and the Jenkins approval step; deployment is not part of either squash.
 
 A PR with a confirmed promotion failure is closed unmerged and returned to the
 sender for a fix in `development`. Missing, pending, or stale evidence blocks the promotion without
@@ -65,7 +67,8 @@ Feature pull requests must use **Squash and merge**; do not rebase unsigned
 commits into `development`. Do not use GitHub Rebase and Merge as a substitute
 for the verified signature required on a promotion.
 
-The owner merges promotions; automation can prepare them but does not merge them.
+Only the owner reviews and squash-merges into `staging`; automation prepares
+that draft and its validation, never its merge.
 
 Bootstrap exception: the initial catalog was reviewed and signed by the owner
 before the first promotion; subsequent changes follow the full flow.
