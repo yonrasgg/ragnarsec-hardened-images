@@ -115,8 +115,10 @@ mutable `latest` promotion is configured.
 
 The order is never skipped. Failed promotions return to `development` for a
 corrected change; no image is published merely because a pull request merged.
-Promotions use fast-forward or rebase, not squash or merge commits. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the complete branch and approval rules.
+Check both protected squash transitions before promotion. The owner reviews and
+squashes into `staging`; promotion to `main` is intended to be automatic only
+after the required GitHub enforcement is proven. See the
+[promotion preflight](CONTRIBUTING.md#promotion-preflight).
 
 ## Using a published image
 

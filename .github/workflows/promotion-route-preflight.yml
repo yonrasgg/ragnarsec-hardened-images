@@ -1,0 +1,43 @@
+name: Preflight the protected promotion route
+
+"on":
+  pull_request_target:
+    branches: [development]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promotion-route-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  simulate:
+    name: Simulate the full squash route (no merge authority)
+    if: github.repository == 'yonrasgg/ragnarsec-hardened-images'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Admit only a fix from this repository
+        shell: bash
+        env:
+          SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_REPO" == "$GITHUB_REPOSITORY" && "$SOURCE_BRANCH" == fix/* ]]
+      - name: Check out protected policy, never PR code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the current route and print the receipt
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 -B tools/jenkins_promotion_route.py --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA"

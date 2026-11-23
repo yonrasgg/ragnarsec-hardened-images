@@ -35,7 +35,7 @@ ENV GF_PATHS_PLUGINS=/var/lib/grafana/plugins \
 # Expose default port
 EXPOSE 3000
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# Inherit tini from ragnarsec-base; a second ENTRYPOINT fails the image-config policy.
 CMD ["grafana", "server", \
      "--homepath=/usr/share/grafana", \
      "--config=/etc/grafana.ini", \
