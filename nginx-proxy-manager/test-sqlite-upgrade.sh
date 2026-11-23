@@ -4,7 +4,7 @@ set -euo pipefail
 old=${1:?exact NPM 2.16.0 image ID required}
 new=${2:?exact NPM 2.17.1 candidate image ID required}
 [[ $old =~ ^sha256:[a-f0-9]{64}$ && $new =~ ^sha256:[a-f0-9]{64}$ ]]
-receipt=$(mktemp -d /tmp/opencode/npm117-sqlite-upgrade.XXXXXXXX)
+receipt=$(mktemp -d -- "${TMPDIR:-/tmp}/npm117-sqlite-upgrade.XXXXXXXX")
 printf 'Evidence directory: %s\n' "$receipt"
 printf '%s\n' "$old" "$new" >"$receipt/image-ids.txt"
 common=(--rm --pull never --network none --read-only --cap-drop ALL --security-opt no-new-privileges
