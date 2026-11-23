@@ -10,6 +10,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / 'tools/jenkins_promotion_route.py'
+sys.path.insert(0, str(ROOT / 'tools'))
+from jenkins_promotion_route import RouteUnavailable, plan_reconciliation, require_reconciliation_context
 
 
 class JenkinsPromotionRoute(unittest.TestCase):
@@ -69,6 +71,44 @@ class JenkinsPromotionRoute(unittest.TestCase):
         self.assertEqual(report['result'], 'conflict')
         self.assertEqual(report['phases'][-1]['lane'], 'staging-to-main')
         self.assertEqual(report['phases'][-1]['conflict_paths'], ['receipt.sh'])
+
+    def test_reconciliation_uses_both_target_parents_and_exact_reviewed_tree(self):
+        self.setup_checkout(conflict=True)
+        before = self.git(self.checkout, 'show-ref')
+        inputs = {name: self.git(self.checkout, 'rev-parse', 'origin/' + name)
+                  for name in ('development', 'staging', 'main')}
+        inputs['fix_head'] = self.git(self.checkout, 'rev-parse', 'HEAD')
+        report = plan_reconciliation(self.checkout, inputs)
+        self.assertEqual(report['result'], 'pass')
+        self.assertFalse(report['merge_authorized'])
+        self.assertTrue(report['requires_verified_reconciliation_prs'])
+        tree = self.git(self.checkout, 'rev-parse', 'HEAD^{tree}')
+        self.assertEqual([p['tree'] for p in report['phases']], [tree] * 3)
+        self.assertEqual([p['base_sha'] for p in report['phases'][1:]],
+                         [inputs['staging'], inputs['main']])
+        self.assertEqual(before, self.git(self.checkout, 'show-ref'))
+
+    def test_approved_reconciliation_cannot_be_requested_by_other_jobs_or_actions(self):
+        exact = dict(JOB_NAME='ragnarsec-hardened-images/PR-164', CHANGE_ID='164',
+                     CHANGE_TARGET='development')
+        source = 'fix/automated-promotion-preflight'
+        require_reconciliation_context(source, None, exact)
+        for branch, action, env in (
+                ('fix/other', None, exact), (source, '1'*40, exact),
+                (source, None, dict(exact, CHANGE_ID='165')),
+                (source, None, dict(exact, JOB_NAME='folder/PR-164')),
+                (source, None, dict(exact, CHANGE_TARGET='staging'))):
+            with self.subTest(branch=branch, action=action, env=env):
+                with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
+                    require_reconciliation_context(branch, action, env)
+
+    def test_recovery_aliases_are_named_and_frozen_in_jenkins(self):
+        pipeline = (ROOT / 'Jenkinsfile').read_text()
+        self.assertIn('sync/development-to-staging-pr164-repair-20261123', pipeline)
+        self.assertIn('sync/staging-to-main-pr164-repair-20261123', pipeline)
+        self.assertIn('e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26', pipeline)
+        self.assertIn('f0a1d6f044406d04e0410016985c638b04b4e47f', pipeline)
+        self.assertIn('--approved-reconciliation', pipeline)
 
     def test_clean_route_binds_exact_live_refs(self):
         self.setup_checkout(conflict=False)
