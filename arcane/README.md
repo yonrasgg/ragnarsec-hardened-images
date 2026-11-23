@@ -8,12 +8,18 @@ describes an image interface, not a deployed service or a published digest.
 
 ## Build inputs
 
-- `FROM ghcr.io/getarcaneapp/arcane:v2.17.3@sha256:2e0dc9f5ef03599181a49baf6470055d82e24d9cb15bbc62498ea642c0f882a7`
-  (reviewed multi-arch index; `linux/amd64` and `linux/arm64`).
+- `FROM ghcr.io/getarcaneapp/manager:v3.1.1@sha256:f12cfe86238b892956d945681613e9056676ca0cda0d980abacad033ebb72bee`
+  (attested upstream multi-arch index; `linux/amd64` and `linux/arm64`).
+- The published v3 manager image includes `containerd/containerd/v2` v2.4.2
+  in its upstream source dependency graph. The v2.17.3 image was blocked by
+  the native vulnerability scan on both platforms. The wrapper still needs
+  its own enforcing native scan and signed release; upstream provenance is
+  not the RagnarSec wrapper signature.
 - Upstream license: **BSD-3-Clause**. Wrapper license: **GPL-3.0**.
 - Upstream runtime: static Go binary on a Debian trixie distroless rootfs.
   No shell, no package manager, no `apk`/`apt` upgrade path.
-- Observed `linux/amd64` image size on 2026-11-04: **166,476,099 bytes**.
+- The historical v2.17.3 `linux/amd64` size was **166,476,099 bytes**. Recheck
+  the size limit on both v3.1.1 platforms; do not copy the historical value.
 - Wrapper runtime user: `1000:1000` (overrides upstream `0:0`). Upstream can
   drop to `PUID`/`PGID`; this wrapper does not use that path.
 
@@ -35,7 +41,7 @@ describes an image interface, not a deployed service or a published digest.
   - `/app/data` persistent and backed up; secrets supplied at runtime through
     the environment or a file, never baked into the image.
 
-## Encryption key — observed behavior
+## Encryption key — historical v2.17.3 observation
 
 The upstream `.env.example` documents `ARCANE_ENCRYPTION_KEY`, but in the pinned
 `v2.17.3` image a production container started only when **`ENCRYPTION_KEY`** was
@@ -50,9 +56,10 @@ Observed on 2026-11-04 with a disposable local container:
 | `ENCRYPTION_KEY` only, 32 chars | started; `/app/arcane health` returned 0 |
 | both variables | started (the second test also proved the key is read) |
 
-Until upstream resolves the naming, the deployment contract requires
-`ENCRYPTION_KEY` of at least 32 characters and records which variable was used.
-Do not store the key in this repository.
+The v3 manager rejects the legacy names: use `ARCANE_ENCRYPTION_KEY` and
+`ARCANE_APP_URL`. Confirm key handling, restoration, and agent compatibility
+with the selected v3 release before deploying. Do not store the key in this
+repository or connect the fixture to the production Docker daemon.
 
 ## Patching
 
