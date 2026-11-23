@@ -166,6 +166,27 @@ the protected environment. No persistent Actions artifact uploads or cross-run
 caches are configured. Cost/billing settings are managed outside this catalog;
 workflow limits alone do not prove an account spending cap.
 
+### Promotion order
+
+1. Every correction starts on `fix/*` and enters `development` only after the
+   approved Ansible checks pass. Jenkins image checks do not replace Ansible.
+2. After integration, Actions can open a `development → staging` **draft**.
+   A human reviews the checks, marks it ready and performs **Squash and merge**.
+3. Jenkins validates the exact staged changes. Only complete, current and
+   enforced Jenkins evidence may drive automatic promotion to `main`. The
+   staging draft workflow does not perform that promotion or Publish.
+4. A confirmed failed gate sends the correction through a new `fix/*` branch
+   into `development`; pending, stale or missing evidence holds the process.
+
+The `prepare-staging-draft` workflow has a read-only preflight and an opt-in
+draft-only job, with no contents write permission. Before setting
+`RAGNARSEC_CREATE_STAGING_DRAFTS=true`, configure the approved `RAGNARSEC_ANSIBLE_APP_ID`
+and `RAGNARSEC_ANSIBLE_CHECK_NAME`, verify GitHub requires that strict check on
+`development`, and qualify GitHub's permission to create drafts. The trusted
+Ansible check output must contain `pr=<number>;base=<sha>;head=<sha>` on the
+reviewed head and complete before its squash. The workflow does not generate
+or attest this proof itself. Existing staging PRs are left untouched.
+
 Before promotion, also run `python3 tools/publication_guard.py . --history`
 against a complete checkout. Deleting an internal file at the tip is insufficient
 if it remains in the history being published. A shallow checkout cannot pass
