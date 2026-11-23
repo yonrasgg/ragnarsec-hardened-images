@@ -750,17 +750,19 @@ class JenkinsBoundaries(unittest.TestCase):
         for forbidden in ('actions/checkout','secrets.GITHUB_TOKEN','GITHUB_ACTIONS','workflow_dispatch','ubuntu-24.04'):
             self.assertNotIn(forbidden,self.pipeline)
 
-    def test_only_reviewed_read_only_observer_is_allowed(self):
+    def test_only_reviewed_read_only_workflows_are_allowed(self):
         workflows = ROOT / '.github/workflows'
-        observer = workflows / 'jenkins-observer.yml'
-        self.assertEqual(sorted(path.name for path in workflows.iterdir()), [observer.name])
-        self.assertTrue(observer.is_file() and not observer.is_symlink())
         # Any workflow change requires an explicit boundary review. Jenkins
-        # must not accidentally accept a checkout or a write-capable workflow.
-        self.assertEqual(
-            hashlib.sha256(observer.read_bytes()).hexdigest(),
-            'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
-        )
+        # remains independent; Actions may read only the protected policy.
+        reviewed = {
+            'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
+            'promotion-route-preflight.yml': 'aab6c64704aa019bf81a21e6b6e79340e91dc727bd91feddee6a1f543dac1629',
+        }
+        self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
+        for name, digest in reviewed.items():
+            path = workflows / name
+            self.assertTrue(path.is_file() and not path.is_symlink())
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
 
     def test_validation_and_publication_are_separate(self):
         validation=self.pipeline.split("stage('Plan')",1)[1].split("stage('Publish')",1)[0]
@@ -847,7 +849,8 @@ class JenkinsBoundaries(unittest.TestCase):
 
     def test_jenkins_plan_stage_infers_image_and_runs_egress_gate(self):
         plan = self.pipeline.split("stage('Plan')", 1)[1].split("stage('Validate')", 1)[0]
-        self.assertIn('tools/select_image.py --image "$IMAGE"', plan)
+        self.assertIn('tools/select_image.py --image "${IMAGE:-}"', plan)
+        self.assertIn('[ -z "${IMAGE:-}" ]', plan)
         self.assertLess(plan.index('select_image.py'), plan.index('image_ci.py plan'))
         self.assertIn('env.CI_VALIDATION_IMAGE', plan)
         self.assertIn('select IMAGE explicitly for a branch build', plan)

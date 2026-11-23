@@ -264,6 +264,26 @@ pipeline {
         }
       }
 
+      stage('Promotion route') {
+        when { expression { env.CHANGE_TARGET == 'development' } }
+        steps {
+          dir('ci-route') { deleteDir() }
+          sh '''
+            set -euo pipefail
+            mkdir -m 700 ci-route
+            python3 tools/jenkins_promotion_route.py --source "$CHANGE_BRANCH" | tee ci-route/promotion-route.json
+          '''
+        }
+        post {
+          always {
+            archiveArtifacts artifacts: 'ci-route/promotion-route.json'
+          }
+          cleanup {
+            dir('ci-route') { deleteDir() }
+          }
+        }
+      }
+
       stage('Tools') {
         steps {
           sh '''
@@ -320,13 +340,13 @@ GITLEAKS_CONFIG
               git fetch --no-tags origin "+refs/heads/${target}:refs/remotes/origin/${target}"
               base="origin/${target}"
             else
-              if [ -z "$IMAGE" ]; then
+              if [ -z "${IMAGE:-}" ]; then
                 echo 'STOP: select IMAGE explicitly for a branch build.' >&2
                 exit 2
               fi
               base=HEAD
             fi
-            selection="$(python3 tools/select_image.py --image "$IMAGE" --base "$base" --head HEAD)"
+            selection="$(python3 tools/select_image.py --image "${IMAGE:-}" --base "$base" --head HEAD)"
             resolved="$(printf '%s' "$selection" | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"])')"
             echo "Resolved image: ${resolved}"
             printf '%s\\n' "$resolved" > "$CI_ROOT/image"
