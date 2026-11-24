@@ -12,12 +12,35 @@ from promotion_route import OID, PreflightError, Repository, RouteConflict
 
 SOURCE = re.compile(r'fix/[a-zA-Z0-9][a-zA-Z0-9._-]*')
 ROUTE = Path(__file__).resolve().with_name('promotion_route.py')
-RECONCILIATION_SOURCE = 'fix/automated-promotion-preflight'
-RECONCILIATION_PARENT = '1ba8a2ae90dc778ff0483535f9a31f8ba4d6f464'
-RECONCILIATION_BASES = {
-    'development': '40c82e789bad5895b730a92ffba2ee8838aeaf4a',
-    'staging': 'e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26',
-    'main': 'f0a1d6f044406d04e0410016985c638b04b4e47f',
+RECONCILIATIONS = {
+    '164': {
+        'source': 'fix/automated-promotion-preflight',
+        'parent': '1ba8a2ae90dc778ff0483535f9a31f8ba4d6f464',
+        'bases': {
+            'development': '40c82e789bad5895b730a92ffba2ee8838aeaf4a',
+            'staging': 'e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26',
+            'main': 'f0a1d6f044406d04e0410016985c638b04b4e47f',
+        },
+        'conflicts': ['tests/test_public_ci.py'],
+    },
+    '173': {
+        'source': 'fix/actions-promotion-base-checkout',
+        'parent': '35167da5701ed431fe6a67eb776c5844ea1c0143',
+        'bases': {
+            'development': 'f94d751309a08107529b0fa3584ef41aac06d700',
+            'staging': 'dbf31c83b18b66b5f6b2aa14516fed4c8b01b604',
+            'main': '07806bb98d24774074713f241f2922d2edc90487',
+        },
+        'conflicts': [
+            '.github/workflows/promotion-route-preflight.yml',
+            'Jenkinsfile',
+            'tests/test_public_ci.py',
+            'tests/test_public_jenkins_promotion_route.py',
+            'tools/jenkins_promotion_route.py',
+        ],
+        'guard_files': ['Jenkinsfile', 'tests/test_public_jenkins_promotion_route.py',
+                        'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
@@ -43,10 +66,25 @@ def live(refs):
 
 
 def require_reconciliation_context(source, reviewed_head, env):
-    if (source != RECONCILIATION_SOURCE or reviewed_head is not None
-            or env.get('JOB_NAME') != 'ragnarsec-hardened-images/PR-164'
-            or env.get('CHANGE_ID') != '164' or env.get('CHANGE_TARGET') != 'development'):
+    pr = env.get('CHANGE_ID')
+    approved = RECONCILIATIONS.get(pr)
+    if (approved is None or source != approved['source'] or reviewed_head is not None
+            or env.get('JOB_NAME') != f'ragnarsec-hardened-images/PR-{pr}'
+            or env.get('CHANGE_FORK')
+            or env.get('CHANGE_TARGET') != 'development'):
         raise RouteUnavailable('unsupported-reconciliation-context')
+    return approved
+
+
+def require_reconciliation_pins(reconciliation, refs, head):
+    if (any(refs[f'refs/heads/{name}'] != sha for name, sha in reconciliation['bases'].items())
+            or git('rev-list', '--parents', '-n1', head).strip() != f"{head} {reconciliation['parent']}"):
+        raise RouteUnavailable('reconciliation-bases-or-source-parent-moved')
+    guard_files = reconciliation.get('guard_files')
+    if guard_files is not None:
+        changed = git('diff', '--name-only', '-z', reconciliation['parent'], head).split('\0')[:-1]
+        if changed != guard_files:
+            raise RouteUnavailable('reconciliation-unreviewed-guard-files')
 
 
 def plan_reconciliation(path, inputs):
@@ -72,8 +110,7 @@ def plan_reconciliation(path, inputs):
 def check(source, reviewed_head, reconcile=False):
     if not SOURCE.fullmatch(source):
         raise RouteUnavailable('unsupported-source')
-    if reconcile:
-        require_reconciliation_context(source, reviewed_head, os.environ)
+    reconciliation = require_reconciliation_context(source, reviewed_head, os.environ) if reconcile else None
     prefix = 'refs/heads/'
     source_ref = prefix + source
     try:
@@ -96,10 +133,8 @@ def check(source, reviewed_head, reconcile=False):
         if checkout != pins[prefix + 'development']:
             raise RouteUnavailable('checkout-does-not-match-live-base')
     git('fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', 'origin', *refs)
-    if reconcile and (
-            any(pins[prefix + name] != sha for name, sha in RECONCILIATION_BASES.items())
-            or git('rev-list', '--parents', '-n1', head).strip() != f'{head} {RECONCILIATION_PARENT}'):
-        raise RouteUnavailable('reconciliation-bases-or-source-parent-moved')
+    if reconciliation is not None:
+        require_reconciliation_pins(reconciliation, pins, head)
     args = [sys.executable, '-B', str(ROUTE), '--fix-head', head]
     for name in branches:
         args.extend(('--' + name, pins[prefix + name]))
@@ -109,12 +144,12 @@ def check(source, reviewed_head, reconcile=False):
         raise RouteUnavailable('invalid-route-report')
     if live(refs) != pins:
         raise RouteUnavailable('live-refs-changed-during-route-check')
-    if reconcile:
+    if reconciliation is not None:
         failed = report.get('phases', [])[-1:]
         if (run.returncode != 1 or not failed or failed[0].get('lane') != 'development-to-staging'
-                or failed[0].get('conflict_paths') != ['tests/test_public_ci.py']):
+                or failed[0].get('conflict_paths') != reconciliation['conflicts']):
             raise RouteUnavailable('unrecognized-direct-route-conflict')
-        inputs = dict(RECONCILIATION_BASES, fix_head=head)
+        inputs = dict(reconciliation['bases'], fix_head=head)
         planned = plan_reconciliation('.', inputs)
         if live(refs) != pins:
             raise RouteUnavailable('live-refs-changed-during-route-check')
@@ -134,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--source', required=True, help='internal fix branch from the PR event')
     parser.add_argument('--reviewed-head', help='expected PR head for a trusted Actions base checkout')
     parser.add_argument('--approved-reconciliation', action='store_true',
-                        help='verify the frozen, one-time PR-164 reconciliation plan')
+                        help='verify the one-time reconciliation pinned to this Jenkins PR')
     args = parser.parse_args()
     try:
         output = check(args.source, args.reviewed_head, args.approved_reconciliation)
