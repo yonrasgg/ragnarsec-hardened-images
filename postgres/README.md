@@ -8,7 +8,9 @@ This document describes an image interface, not a deployed system.
 
 ## Build inputs
 
-- Declared `FROM`: `postgres:15-alpine`.
+- PostgreSQL 15.20 from the official `postgres:15-alpine` OCI index pinned in
+  the Dockerfile. The index contains AMD64 and ARM64 platform images.
+- Alpine's `libxml2=2.13.9-r3` updates the version inherited from that index.
 
 Read the Dockerfile for exact build arguments, package choices and download locations.
 A tag is not immutable: resolve and review digests for a release. Availability and
@@ -17,7 +19,8 @@ support status of upstream versions must be checked before building.
 ## Hardening declared
 
 - Last `USER` instruction: `postgres`; verify the effective image user after building.
-- The Dockerfile invokes `apk upgrade` during build.
+- The server starts as `postgres` with read-only configuration; PostgreSQL
+  data remains writable through the upstream volume contract.
 - Permission or ownership adjustments are present; review their exact paths and effect in the Dockerfile.
 
 These are static observations, not proof of runtime isolation or vulnerability remediation.
@@ -28,7 +31,7 @@ Consumers must validate required capabilities, filesystem permissions and writab
 Rebuild from reviewed upstream inputs to apply build-time package changes.
 An existing image is not patched merely because a new Dockerfile is committed.
 Record the upstream and output digests, scanner/database version, findings and any
-time-bounded exceptions. A successful package upgrade does not prove all CVEs are fixed.
+time-bounded exceptions.
 
 ## Controls and evidence
 
