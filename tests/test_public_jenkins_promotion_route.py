@@ -132,8 +132,14 @@ class JenkinsPromotionRoute(unittest.TestCase):
     def test_actions_uses_base_checkout_and_only_fetches_pr_objects(self):
         self.setup_checkout(conflict=False)
         head = self.git(self.checkout, 'rev-parse', 'HEAD')
-        self.git(self.checkout, 'switch', '--detach', '-q', 'origin/development')
         source = 'fix/reviewed-change'
+        self.git(self.remote, 'switch', '-q', 'main')
+        self.git(self.remote, 'commit', '--allow-empty', '-qm', 'Advance the default branch')
+        self.git(self.checkout, 'fetch', '--quiet', 'origin', 'main')
+        self.git(self.checkout, 'switch', '--detach', '-q', 'origin/main')
+        self.assertEqual(self.run_gate(source, '--reviewed-head', head)['reason'],
+                         'checkout-does-not-match-live-base')
+        self.git(self.checkout, 'switch', '--detach', '-q', 'origin/development')
         self.assertEqual(self.run_gate(source, '--reviewed-head', head)['result'], 'pass')
         self.assertEqual(self.run_gate(source, '--reviewed-head', '1'*40)['reason'],
                          'event-does-not-match-live-source')
@@ -152,9 +158,13 @@ class JenkinsPromotionRoute(unittest.TestCase):
     def test_actions_has_read_only_automatic_triggers_and_base_checkout(self):
         workflow = (ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
         for marker in ('pull_request_target:', 'synchronize', 'ready_for_review',
-                       'contents: read', 'ref: ${{ github.sha }}', 'persist-credentials: false',
+                       'contents: read', 'ref: ${{ github.event.pull_request.base.sha }}',
+                       'persist-credentials: false',
+                       '"$BASE_REPO" == "$GITHUB_REPOSITORY"', '"$BASE_BRANCH" == development',
                        '--reviewed-head "$PR_HEAD_SHA"'):
             self.assertIn(marker, workflow)
+        self.assertNotIn('ref: ${{ github.sha }}', workflow)
+        self.assertNotIn('ref: ${{ github.event.pull_request.head.sha }}', workflow)
         self.assertNotIn('contents: write', workflow)
         self.assertNotIn('self-hosted', workflow)
 
