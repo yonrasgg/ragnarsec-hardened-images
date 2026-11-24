@@ -19,18 +19,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
-      - name: Admit only a fix from this repository
+      - name: Verify the source and protected target
         shell: bash
         env:
           SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
+          BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_REPO" == "$GITHUB_REPOSITORY" && "$SOURCE_BRANCH" == fix/* ]]
+          [[ "$BASE_REPO" == "$GITHUB_REPOSITORY" && "$BASE_BRANCH" == development ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
       - name: Check out protected policy, never PR code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Check the current route and print the receipt
