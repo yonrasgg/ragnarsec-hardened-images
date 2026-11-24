@@ -880,4 +880,12 @@ class JenkinsBoundaries(unittest.TestCase):
             self.assertIn(f'{tip} {branch}', block)
 
 
+def load_tests(loader, standard_tests, pattern):
+    # Keep the shared source path while using the expanded workflow review
+    # during both test discovery and direct module runs.
+    import ci_workflow_contracts
+
+    return loader.loadTestsFromModule(ci_workflow_contracts, pattern=pattern)
+
+
 if __name__=='__main__':unittest.main()

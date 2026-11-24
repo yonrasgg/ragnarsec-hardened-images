@@ -27,7 +27,7 @@ commandTests:
     command: '/app/arcane'
     args: ['version']
     exitCode: 0
-    expectedOutput: ['Arcane version: 2.17.3']
+    expectedOutput: ['Arcane version: 3.1.1']
   - name: 'Health command'
     command: '/app/arcane'
     args: ['health', '--help']

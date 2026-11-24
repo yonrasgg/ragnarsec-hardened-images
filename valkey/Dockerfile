@@ -17,10 +17,8 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
 
 USER root
 
-# SECURITY: Upgrade system packages first
-# hadolint ignore=DL3018
-RUN apk upgrade --no-cache && \
-    apk add --no-cache valkey && \
+# Pin the package for reproducible builds.
+RUN apk add --no-cache valkey=9.0.7-r0 && \
     mkdir -p /var/lib/valkey /etc/valkey && \
     chown -R ragnarsec:ragnarsec /var/lib/valkey /etc/valkey
 
@@ -30,5 +28,5 @@ WORKDIR /var/lib/valkey
 # Expose default Redis/Valkey port
 EXPOSE 6379
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# Inherit tini from ragnarsec-base.
 CMD ["valkey-server", "--protected-mode", "yes"]

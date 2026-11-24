@@ -17,7 +17,7 @@ support status of upstream versions must be checked before building.
 ## Hardening declared
 
 - Last `USER` instruction: `ragnarsec`; verify the effective image user after building.
-- The Dockerfile invokes `apk upgrade` during build.
+- The Dockerfile pins APK inputs to versions available for AMD64 and ARM64.
 - Permission or ownership adjustments are present; review their exact paths and effect in the Dockerfile.
 
 These are static observations, not proof of runtime isolation or vulnerability remediation.
@@ -28,7 +28,7 @@ Consumers must validate required capabilities, filesystem permissions and writab
 Rebuild from reviewed upstream inputs to apply build-time package changes.
 An existing image is not patched merely because a new Dockerfile is committed.
 Record the upstream and output digests, scanner/database version, findings and any
-time-bounded exceptions. A successful package upgrade does not prove all CVEs are fixed.
+time-bounded exceptions.
 
 ## Controls and evidence
 
