@@ -1,17 +1,25 @@
 schemaVersion: 2.0.0
 
 metadataTest:
-  user: ragnarsec
+  user: "1000:1000"
   workdir: /app
+  entrypoint: ["/sbin/tini", "--"]
+  exposedPorts: ["9187"]
 
 fileExistenceTests:
   - name: 'Postgres Exporter Binary'
     path: '/usr/bin/postgres_exporter'
     shouldExist: true
+  - name: 'No shell'
+    path: '/bin/sh'
+    shouldExist: false
+  - name: 'No package manager'
+    path: '/sbin/apk'
+    shouldExist: false
 
 commandTests:
   - name: 'Postgres Exporter Version'
-    command: 'sh'
-    args: ['-c', 'postgres_exporter --version 2>&1']
+    command: 'postgres_exporter'
+    args: ['--version']
     exitCode: 0
-    expectedOutput: ['postgres_exporter']
+    expectedError: ['postgres_exporter, version']
