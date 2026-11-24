@@ -19,8 +19,7 @@ USER root
 
 # SECURITY: Upgrade system packages first
 # hadolint ignore=DL3018
-RUN apk upgrade --no-cache && \
-    apk add --no-cache alertmanager && \
+RUN apk add --no-cache alertmanager=0.32.1-r3 && \
     mkdir -p /etc/alertmanager /var/lib/alertmanager && \
     chown -R ragnarsec:ragnarsec /etc/alertmanager /var/lib/alertmanager
 
