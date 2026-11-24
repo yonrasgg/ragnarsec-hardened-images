@@ -8,16 +8,14 @@ This document describes an image interface, not a deployed system.
 
 ## Build inputs
 
-- Declared `FROM`: `ghcr.io/yonrasgg/ragnarsec-base:${BASE_TAG}`.
-
-Read the Dockerfile for exact build arguments, package choices and download locations.
-A tag is not immutable: resolve and review digests for a release. Availability and
-support status of upstream versions must be checked before building.
+- PostgreSQL Exporter v0.21.1, pinned to the upstream amd64/arm64 OCI index.
+- The pipeline builds a `ragnarsec-base-min` parent for the same platform.
 
 ## Hardening declared
 
-- Last `USER` instruction: `ragnarsec`; verify the effective image user after building.
-- The Dockerfile invokes `apk upgrade` during build.
+- Runtime UID/GID `1000:1000` with the baseline `tini` entrypoint.
+- The final stage copies the read-only binary and upstream notices into a base
+  with no shell or package manager.
 
 These are static observations, not proof of runtime isolation or vulnerability remediation.
 Consumers must validate required capabilities, filesystem permissions and writable data paths.
@@ -27,7 +25,7 @@ Consumers must validate required capabilities, filesystem permissions and writab
 Rebuild from reviewed upstream inputs to apply build-time package changes.
 An existing image is not patched merely because a new Dockerfile is committed.
 Record the upstream and output digests, scanner/database version, findings and any
-time-bounded exceptions. A successful package upgrade does not prove all CVEs are fixed.
+time-bounded exceptions.
 
 ## Controls and evidence
 
@@ -37,6 +35,7 @@ time-bounded exceptions. A successful package upgrade does not prove all CVEs ar
 | Image test definitions | `../tests/ragnarsec-postgres-exporter.yaml`; execution not evidenced by this documentation. |
 
 Defined test cases: `Postgres Exporter Version`, `Postgres Exporter Binary`.
+Jenkins checks each platform against a 32 MiB uncompressed layer budget.
 
 No built-image pass, SBOM, signature, multi-architecture result or runtime smoke-test
 receipt is attached to this documentation update. Do not treat the catalog as an approval.
