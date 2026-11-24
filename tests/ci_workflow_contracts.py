@@ -1,7 +1,7 @@
 """Discover the existing CI contracts and the current Actions allowlist."""
 import hashlib
 
-import ci_contracts as suite
+import test_public_ci as suite
 
 
 setUpModule = suite.setUpModule
