@@ -589,6 +589,9 @@ def main():
     parser.add_argument('--tag', default='local-validation')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
+    if args.action == 'plan' and os.environ.get('CI_CAPTURE_PLAN_CONTEXT') == 'true':
+        from validation_context import capture_plan_inputs
+        capture_plan_inputs(args.image, os.environ)
     if args.action == 'plan':
         ordered = plan(args.image)
         # Pre-flight for the build agents' egress proxy: every host a recipe may contact

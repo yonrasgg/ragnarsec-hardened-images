@@ -36,40 +36,39 @@ and `agent/<slug>`. Branch from `development`, open a pull request back to
 Promotion is linear:
 
 1. Pull request to `development`: contract tests, secret scan and image plan;
-   squash merge. GitHub creates and signs the squash commit.
-2. Pull request `development` -> `staging`: full image validation (build, scan,
-   SBOM and signature verification) and human review. Fast-forward or rebase;
-   no merge commit and no publication.
-3. Pull request `staging` -> `main`: only for a commit already validated in
-   `staging`; full validation runs again, then human approval, fast-forward or
-   rebase, signed tag `vX.Y.Z`, and only then publication with `PUBLISH` and
-   the Jenkins approval step.
+   squash after required checks pass. If validation fails, keep the PR open for
+   review and repair it there.
+2. Draft pull request `development` -> `staging`: qualify the exact candidate
+   for every image in the plan on native AMD64 and ARM64 with `PUBLISH=false`.
+   After human review, the owner performs the protected squash and verifies the
+   resulting commit signature and expected tree.
+3. Draft pull request `staging` -> `main`: recheck the actual `staging` head and
+   current `main` base and qualify the exact candidate again. The protected
+   squash to `main` is intended to be automatic only after required GitHub
+   enforcement is proven to reject stale or incomplete evidence for that route.
+   Until then, leave automation disabled rather than weakening protection.
+   Publication is a separate run on the approved `main` revision with `PUBLISH`
+   and the Jenkins approval step; deployment is not part of either squash.
 
-Do not squash a promotion: it replaces the reviewed commits with a new commit
-whose ancestry no longer contains `development`, so the next promotion cannot
-apply cleanly. Squash is reserved for feature pull requests into `development`.
-
-A promotion that fails any required check is closed unmerged and returned to the
-sender for correction in `development`. This applies to human and AI-agent
-authors alike: the failure is never fixed forward on `staging` or `main`, and no
-check is waived to preserve the schedule. A corrected change repeats the full
-`development` -> `staging` -> `main` sequence.
+A PR with a confirmed promotion failure is closed unmerged and returned to the
+sender for a fix in `development`. Missing, pending, or stale evidence blocks the promotion without
+being treated as a failed validation. Never waive a check to preserve a schedule.
 
 Jenkins rejects a `staging` build whose commit is not traceable to
 `development`, and a `main` build whose commit is not traceable to `staging`.
-A rebased promotion is accepted when its exact tree already exists in the lower
-branch. Merge commits are disabled in repository settings. Direct pushes, force
+A squash changes the commit SHA; its exact tree must still match the validated
+source tree for provenance. Merge commits are disabled. Direct pushes, force
 pushes and branch deletion are blocked on the three long-lived branches;
 `staging` and `main` additionally require signed commits.
 
 `development` accepts unsigned commits from short-lived branches, but only
 through a pull request; the squash commit is created and signed by GitHub.
 Feature pull requests must use **Squash and merge**; do not rebase unsigned
-commits into `development`. Promotion pull requests carry only the signed squash
-commits already present in `development`.
+commits into `development`. Do not use GitHub Rebase and Merge as a substitute
+for the verified signature required on a promotion.
 
-Until a machine identity exists, the repository owner is the only merger to
-`staging` and `main`; automation opens pull requests but does not merge them.
+Only the owner reviews and squash-merges into `staging`; automation prepares
+that draft and its validation, never its merge.
 
 Bootstrap exception: the initial catalog was reviewed and signed by the owner
 before the first promotion; subsequent changes follow the full flow.
@@ -77,6 +76,55 @@ before the first promotion; subsequent changes follow the full flow.
 A clean scan is scoped evidence, not a guarantee. Report potential sensitive
 material privately through the repository owner's GitHub profile contact options;
 never open an issue containing a credential or confidential reproduction.
+
+### Promotion preflight
+
+Before opening any pull request into `staging` or `main`, verify the published
+source and target tips and every incoming commit's GitHub signature. An
+unsigned or unverifiable commit blocks draft creation and Jenkins dispatch.
+Recheck the exact SHAs before validation. Signing or replacing a commit changes
+its SHA and requires new checks; a successful check never transfers to it.
+For the standard `development` to `staging` transition after fetching:
+
+```sh
+python3 tools/promotion_signatures.py --source development --target staging \
+  --head "$(git rev-parse refs/remotes/origin/development)" \
+  --base "$(git rev-parse refs/remotes/origin/staging)"
+```
+
+Run the [route checker](tools/promotion_route.py) with Git 2.38 or newer from a
+trusted, complete checkout. Fetch the three branch tips together, simulate both
+squashes, and record the JSON receipt:
+
+```sh
+git fetch --atomic --no-tags origin \
+  refs/heads/development:refs/remotes/origin/development \
+  refs/heads/staging:refs/remotes/origin/staging \
+  refs/heads/main:refs/remotes/origin/main
+python3 tools/promotion_route.py \
+  --development "$(git rev-parse refs/remotes/origin/development)" \
+  --staging "$(git rev-parse refs/remotes/origin/staging)" \
+  --main "$(git rev-parse refs/remotes/origin/main)"
+```
+
+Adding `--fix-head` with an exact PR head from the same clone also simulates the
+integration squash before both promotions. Run the full check before staging a
+batch, including changes that only affect shared pipeline code. After the staging
+squash, fetch again, compare the actual tree with the expected one and re-run the
+direct check with `--staging-to-main-only` and only the actual staging and main
+SHAs. If any participating ref moves, recompute the candidate and obtain fresh
+evidence. Review the changed paths and compare the simulated tree with the
+candidate reported by GitHub before relying on the receipt. If a promotion
+phase reports `source_tree_matches: false`, stop: a clean Git merge can still
+include target-only changes and differ from the reviewed source tree.
+
+Exit `1` reports a content conflict with paths; exit `2` reports an incomplete
+check. Exit `0` only shows that the input commits can merge cleanly. The checker
+does not move refs, sign commits, or authorize a merge. Jenkins evidence must
+still cover every planned image against the exact head, base, candidate, and
+trusted policy. One image's successful status cannot approve a multi-image
+promotion. Formal deployment additionally requires signed digests, a batch
+preflight, and per-service acceptance and rollback checks.
 
 ## Local commit gate
 
