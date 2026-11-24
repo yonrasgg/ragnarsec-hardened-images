@@ -24,8 +24,10 @@ COPY --chmod=0444 conf/postgresql.conf conf/pg_hba.conf /etc/postgresql/
 
 # The base index contains an older libxml2. Install the reviewed Alpine fix.
 # The entrypoint already starts as postgres and does not need gosu.
+# COPY --chmod also sets the mode of a newly created directory. Keep it searchable.
 RUN apk add --no-cache libxml2=2.13.9-r3 \
-    && rm -f /usr/local/bin/gosu
+    && rm -f /usr/local/bin/gosu \
+    && chmod 0555 /etc/postgresql
 
 USER postgres
 
