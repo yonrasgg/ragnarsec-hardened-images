@@ -3,6 +3,7 @@ schemaVersion: 2.0.0
 metadataTest:
   user: ragnarsec
   workdir: /var/lib/valkey
+  entrypoint: ['/sbin/tini', '--']
   cmd: ['valkey-server', '--protected-mode', 'yes']
   exposedPorts: ['6379']
 
@@ -16,4 +17,4 @@ commandTests:
     command: 'valkey-server'
     args: ['--version']
     exitCode: 0
-    expectedOutput: ['Server']
+    expectedOutput: ['^Valkey server v=']
