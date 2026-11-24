@@ -6,12 +6,19 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / 'tools/jenkins_promotion_route.py'
 sys.path.insert(0, str(ROOT / 'tools'))
-from jenkins_promotion_route import RouteUnavailable, plan_reconciliation, require_reconciliation_context
+from jenkins_promotion_route import (
+    RECONCILIATIONS,
+    RouteUnavailable,
+    plan_reconciliation,
+    require_reconciliation_context,
+    require_reconciliation_pins,
+)
 
 
 class JenkinsPromotionRoute(unittest.TestCase):
@@ -102,10 +109,40 @@ class JenkinsPromotionRoute(unittest.TestCase):
                 with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
                     require_reconciliation_context(branch, action, env)
 
+    def test_actions_checkout_reconciliation_is_scoped_to_pr173_and_reviewed_files(self):
+        approved = RECONCILIATIONS['173']
+        env = dict(JOB_NAME='ragnarsec-hardened-images/PR-173', CHANGE_ID='173',
+                   CHANGE_TARGET='development')
+        self.assertEqual(require_reconciliation_context(approved['source'], None, env), approved)
+        with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
+            require_reconciliation_context(approved['source'], None, dict(env, CHANGE_ID='174'))
+        with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
+            require_reconciliation_context(approved['source'], '1' * 40, env)
+        with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
+            require_reconciliation_context(approved['source'], None, dict(env, CHANGE_FORK='fork/repo'))
+
+        head = '2' * 40
+        refs = {f'refs/heads/{name}': sha for name, sha in approved['bases'].items()}
+        with patch('jenkins_promotion_route.git', side_effect=[
+                f"{head} {approved['parent']}\n", '\0'.join(approved['guard_files']) + '\0']):
+            require_reconciliation_pins(approved, refs, head)
+        with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-bases-or-source-parent-moved'):
+            require_reconciliation_pins(approved, dict(refs, **{'refs/heads/main': '3' * 40}), head)
+        with patch('jenkins_promotion_route.git', return_value=f"{head} {'3' * 40}\n"):
+            with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-bases-or-source-parent-moved'):
+                require_reconciliation_pins(approved, refs, head)
+        with patch('jenkins_promotion_route.git', side_effect=[
+                f"{head} {approved['parent']}\n", 'versions.json\0']):
+            with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-unreviewed-guard-files'):
+                require_reconciliation_pins(approved, refs, head)
+
     def test_recovery_aliases_are_named_and_frozen_in_jenkins(self):
         pipeline = (ROOT / 'Jenkinsfile').read_text()
         self.assertIn('sync/development-to-staging-pr164-repair-20261123', pipeline)
         self.assertIn('sync/staging-to-main-pr164-repair-20261123', pipeline)
+        self.assertIn('sync/development-to-staging-actions-base-20261124-v2', pipeline)
+        self.assertIn('sync/staging-to-main-actions-base-20261124-v2', pipeline)
+        self.assertIn('ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout', pipeline)
         self.assertIn('e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26', pipeline)
         self.assertIn('f0a1d6f044406d04e0410016985c638b04b4e47f', pipeline)
         self.assertIn('--approved-reconciliation', pipeline)
@@ -132,8 +169,14 @@ class JenkinsPromotionRoute(unittest.TestCase):
     def test_actions_uses_base_checkout_and_only_fetches_pr_objects(self):
         self.setup_checkout(conflict=False)
         head = self.git(self.checkout, 'rev-parse', 'HEAD')
-        self.git(self.checkout, 'switch', '--detach', '-q', 'origin/development')
         source = 'fix/reviewed-change'
+        self.git(self.remote, 'switch', '-q', 'main')
+        self.git(self.remote, 'commit', '--allow-empty', '-qm', 'Advance the default branch')
+        self.git(self.checkout, 'fetch', '--quiet', 'origin', 'main')
+        self.git(self.checkout, 'switch', '--detach', '-q', 'origin/main')
+        self.assertEqual(self.run_gate(source, '--reviewed-head', head)['reason'],
+                         'checkout-does-not-match-live-base')
+        self.git(self.checkout, 'switch', '--detach', '-q', 'origin/development')
         self.assertEqual(self.run_gate(source, '--reviewed-head', head)['result'], 'pass')
         self.assertEqual(self.run_gate(source, '--reviewed-head', '1'*40)['reason'],
                          'event-does-not-match-live-source')
@@ -152,9 +195,13 @@ class JenkinsPromotionRoute(unittest.TestCase):
     def test_actions_has_read_only_automatic_triggers_and_base_checkout(self):
         workflow = (ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
         for marker in ('pull_request_target:', 'synchronize', 'ready_for_review',
-                       'contents: read', 'ref: ${{ github.sha }}', 'persist-credentials: false',
+                       'contents: read', 'ref: ${{ github.event.pull_request.base.sha }}',
+                       'persist-credentials: false',
+                       '"$BASE_REPO" == "$GITHUB_REPOSITORY"', '"$BASE_BRANCH" == development',
                        '--reviewed-head "$PR_HEAD_SHA"'):
             self.assertIn(marker, workflow)
+        self.assertNotIn('ref: ${{ github.sha }}', workflow)
+        self.assertNotIn('ref: ${{ github.event.pull_request.head.sha }}', workflow)
         self.assertNotIn('contents: write', workflow)
         self.assertNotIn('self-hosted', workflow)
 
