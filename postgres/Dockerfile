@@ -8,6 +8,9 @@ ARG BUILD_DATE=1970-01-01T00:00:00Z
 ARG VCS_REF=local
 ARG VERSION=dev
 
+# Pre-create a searchable directory before copying read-only config files.
+RUN install -d -m 0555 /etc/postgresql
+
 # NOTE: GPL-3.0 applies to this wrapper (Dockerfile, configs, scripts) only.
 # PostgreSQL itself remains under the PostgreSQL License (permissive, similar to MIT/BSD).
 LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-hardened-images" \
@@ -24,10 +27,8 @@ COPY --chmod=0444 conf/postgresql.conf conf/pg_hba.conf /etc/postgresql/
 
 # The base index contains an older libxml2. Install the reviewed Alpine fix.
 # The entrypoint already starts as postgres and does not need gosu.
-# COPY --chmod also sets the mode of a newly created directory. Keep it searchable.
 RUN apk add --no-cache libxml2=2.13.9-r3 \
-    && rm -f /usr/local/bin/gosu \
-    && chmod 0555 /etc/postgresql
+    && rm -f /usr/local/bin/gosu
 
 USER postgres
 
