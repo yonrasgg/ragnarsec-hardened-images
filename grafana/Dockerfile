@@ -19,8 +19,7 @@ USER root
 
 # SECURITY: Upgrade system packages first
 # hadolint ignore=DL3018
-RUN apk upgrade --no-cache && \
-    apk add --no-cache grafana && \
+RUN apk add --no-cache grafana=12.4.14-r0 && \
     mkdir -p /var/lib/grafana/plugins /var/log/grafana /etc/grafana && \
     chown -R ragnarsec:ragnarsec /var/lib/grafana /var/log/grafana /etc/grafana
 
