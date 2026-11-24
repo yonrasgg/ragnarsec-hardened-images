@@ -172,16 +172,20 @@ pipeline {
                 exit 2
               }
             }
-            # Scoped recovery for PR-164. The current source must be precisely
+            # Scoped recovery. The current source must be precisely
             # one reviewed squash after its frozen tip, and the signed sync
             # candidate must reproduce that source tree on the frozen target.
-            require_pr164_sync() {
+            require_scoped_sync() {
               sync_head="$1" sync_target="$2" sync_base="$3" sync_source="$4" sync_source_parent="$5"
+              test -z "${CHANGE_FORK:-}" || {
+                echo 'STOP: scoped recovery requires a branch from this repository.' >&2
+                exit 2
+              }
               require_one_time_sync "$sync_head" "$sync_target" "$sync_base" "$sync_source"
               source_tip="$(git rev-parse "origin/${sync_source}")"
               test "$(git rev-list --parents -n 1 "$source_tip")" = "$source_tip $sync_source_parent" &&
               test "$(git rev-list --parents -n 1 "$sync_head")" = "$sync_head $sync_base" || {
-                echo 'STOP: PR-164 recovery expired or has unexpected source/target parents.' >&2
+                echo 'STOP: scoped recovery expired or has unexpected source/target parents.' >&2
                 exit 2
               }
             }
@@ -217,8 +221,11 @@ pipeline {
                       exit 2
                     }
                   elif [ "$source" = "sync/development-to-staging-pr164-repair-20261123" ]; then
-                    require_pr164_sync "$head" staging e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26 \
+                    require_scoped_sync "$head" staging e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26 \
                       development 40c82e789bad5895b730a92ffba2ee8838aeaf4a
+                  elif [ "$source" = "sync/development-to-staging-actions-base-20261124-v2" ]; then
+                    require_scoped_sync "$head" staging dbf31c83b18b66b5f6b2aa14516fed4c8b01b604 \
+                      development f94d751309a08107529b0fa3584ef41aac06d700
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -237,8 +244,11 @@ pipeline {
                     require_one_time_sync "$head" main \
                       faaf17460b6e828c02e455665015fb05828b1c87 staging
                   elif [ "$source" = "sync/staging-to-main-pr164-repair-20261123" ]; then
-                    require_pr164_sync "$head" main f0a1d6f044406d04e0410016985c638b04b4e47f \
+                    require_scoped_sync "$head" main f0a1d6f044406d04e0410016985c638b04b4e47f \
                       staging e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26
+                  elif [ "$source" = "sync/staging-to-main-actions-base-20261124-v2" ]; then
+                    require_scoped_sync "$head" main 07806bb98d24774074713f241f2922d2edc90487 \
+                      staging dbf31c83b18b66b5f6b2aa14516fed4c8b01b604
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -291,10 +301,12 @@ pipeline {
             set -euo pipefail
             mkdir -m 700 ci-route
             set -- --source "$CHANGE_BRANCH"
-            if [ "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" = \
-                 'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight' ]; then
-              set -- "$@" --approved-reconciliation
-            fi
+            case "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" in
+              'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'|\
+              'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout')
+                set -- "$@" --approved-reconciliation
+                ;;
+            esac
             python3 tools/jenkins_promotion_route.py "$@" | tee ci-route/promotion-route.json
           '''
         }
