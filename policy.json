@@ -1,4 +1,4 @@
 {
-  "enforce": ["ragnarsec-base", "ragnarsec-base-min", "ragnarsec-nginx", "ragnarsec-node-exporter"],
+  "enforce": ["ragnarsec-base", "ragnarsec-base-min", "ragnarsec-nginx", "ragnarsec-node-exporter", "ragnarsec-postgres-exporter"],
   "warn": "*"
 }

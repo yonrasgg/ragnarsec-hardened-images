@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Base image: Official Postgres 15 Alpine
-FROM postgres:15-alpine
+FROM postgres:15-alpine@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d
 
 # OCI metadata (build-time args populated by CI; defaults for local builds)
 ARG BUILD_DATE=1970-01-01T00:00:00Z
@@ -19,27 +19,14 @@ LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-har
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.vendor="RagnarSec"
 
-# SECURITY: Explicitly upgrade Alpine packages to patch CVEs surfaced between official image releases.
-# This trades build determinism for minimized attack surface.
-RUN apk upgrade --no-cache \
-    && rm -rf /var/cache/apk/*
+# Keep configuration readable by the service without granting write access.
+COPY --chmod=0444 conf/postgresql.conf conf/pg_hba.conf /etc/postgresql/
 
-# Copy custom configuration
-# Postgres official image looks for config in /etc/postgresql/postgresql.conf if specified,
-# or we can override the default location.
-# The official image entrypoint allows placing config files.
-
-COPY conf/postgresql.conf /etc/postgresql/postgresql.conf
-COPY conf/pg_hba.conf /etc/postgresql/pg_hba.conf
-
-# Ensure permissions (postgres user is uid 70 in alpine usually, or 999 in debian)
-# Alpine postgres user is 'postgres'
-RUN chown postgres:postgres /etc/postgresql/postgresql.conf /etc/postgresql/pg_hba.conf \
-    # Remove gosu binary to eliminate Go vulnerabilities (CVE-2025-58183, CVE-2025-61729)
-    # We don't use gosu in our entrypoint logic, so it's safe to remove to reduce attack surface.
+# The base index contains an older libxml2. Install the reviewed Alpine fix.
+# The entrypoint already starts as postgres and does not need gosu.
+RUN apk add --no-cache libxml2=2.13.9-r3 \
     && rm -f /usr/local/bin/gosu
 
-# Switch to postgres user to avoid entrypoint trying to use gosu (which we removed)
 USER postgres
 
 # Use the custom config file
