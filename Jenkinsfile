@@ -233,6 +233,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-o1-ds007-20261125" ]; then
                     require_scoped_sync "$head" staging d3af4e2d79a3796c73d7bef5f0c0ad9717c1304d \
                       development 8cc8afd1c6b89c4b3ee50a26a12602ead05cdc8d
+                  elif [ "$source" = "sync/development-to-staging-o1-ds007-final-20261125" ]; then
+                    require_scoped_sync "$head" staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e \
+                      development 5699b18d1a3b599cb27a7783702f0912c4947ffe
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -260,8 +263,11 @@ pipeline {
                     require_scoped_sync "$head" main 84d70416ea3038f23d36bd5187af5f3b324c505b \
                       staging f8035cd71e576c9ea469a554dac0df1f07e2ba29
                   elif [ "$source" = "sync/staging-to-main-o1-ds007-20261125" ]; then
-                    require_scoped_sync "$head" main f19dd8243c373ae954a3b8c2b635ace11d3b335e \
-                      staging 9d5d50c304133826830c5e61d7fbedab0976a3aa
+                    require_scoped_sync "$head" main 84d70416ea3038f23d36bd5187af5f3b324c505b \
+                      staging d3af4e2d79a3796c73d7bef5f0c0ad9717c1304d
+                  elif [ "$source" = "sync/staging-to-main-o1-ds007-final-20261125" ]; then
+                    require_scoped_sync "$head" main 6abfb7aed7287c43a920427c170d26b8e4dfe76d \
+                      staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -321,7 +327,12 @@ pipeline {
               'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'|\
               'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'|\
               'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'|\
-              'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125')
+              'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125'|\
+              'ragnarsec-hardened-images/PR-219:219:fix/o1-ds007-main-lane-repin-20261125'|\
+              'ragnarsec-hardened-images/PR-222:222:fix/o1-ds007-staging-lane-repin-20261125'|\
+              'ragnarsec-hardened-images/PR-224:224:fix/o1-ds007-lane-pins-final-20261125'|\
+              'ragnarsec-hardened-images/PR-215:215:fix/promotion-candidate-evaluator-20261125'|\
+              'ragnarsec-hardened-images/PR-233:233:fix/repin-unblock-sync-lanes-20261125')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac
