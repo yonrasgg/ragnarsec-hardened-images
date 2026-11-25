@@ -1,3 +1,4 @@
+<!-- CONTROLLED ACCEPTANCE TEST 2026-11-25: draft-only admission probe; PUBLISH=false; no merge, no image publication. -->
 # RagnarSec Hardened Images
 
 **A source catalog for building, validating, and publishing container images by digest.**
