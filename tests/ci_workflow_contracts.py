@@ -17,6 +17,7 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
     def test_only_reviewed_read_only_workflows_are_allowed(self):
         workflows = suite.ROOT / '.github/workflows'
         reviewed = {
+            'check-promotion-candidate.yml': '71463c1026006a436c0f4b40f963e36c54e0abaaca109e3bdf3f9ccc3020f7cd',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
             'prepare-staging-draft.yml': '084a22360f2ff264c3b4d4b7f25aa8481cf49db05d7d14481416f08803b0b56f',
             'promotion-route-preflight.yml': '85ae25042bed4bc1cc81f058b69a557a1e98a1ba2abefae3ddafb82f7e722ae7',

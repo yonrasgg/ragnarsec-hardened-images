@@ -126,6 +126,17 @@ RECONCILIATIONS = {
         },
         'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
     },
+    '215': {
+        'source': 'fix/promotion-candidate-evaluator-20261125',
+        'parent': 'ff690e27c3038d295c19b5045992ef7c924f207e',
+        'bases': {
+            'development': '15d2f3d3760a5600c2dd09849dcbf522f536d330',
+            'staging': '6421e1b72b11dabe68c0bd3759885989fe81ee8e',
+            'main': '6abfb7aed7287c43a920427c170d26b8e4dfe76d',
+        },
+        'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
+                      'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
