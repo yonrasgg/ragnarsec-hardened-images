@@ -199,8 +199,8 @@ def check_dockerfile(path):
     return problems
 
 
-def check_budget(name, size_bytes, budgets_path):
-    budgets = json.loads(Path(budgets_path).read_text())
+def check_budget(name, size_bytes, budgets_path, limits=None):
+    budgets = limits if limits is not None else json.loads(Path(budgets_path).read_text())
     limit = budgets.get(name)
     if limit is None:
         return []
