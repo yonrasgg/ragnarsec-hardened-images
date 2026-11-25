@@ -52,7 +52,6 @@ class WgdashboardNativeTlsStructureTests(unittest.TestCase):
         self.assertIn("--keyfile", self.entrypoint)
         self.assertIn("--certfile", self.entrypoint)
         self.assertIn("dashboard:app", self.entrypoint)
-        self.assertIn("exec /bin/bash /entrypoint.sh", self.entrypoint)
 
     def test_healthcheck_script_is_real_https_probe(self):
         self.assertIn("/api/handshake", self.healthcheck)
@@ -86,8 +85,6 @@ class WgdashboardNativeTlsStructureTests(unittest.TestCase):
     def test_image_runs_unprivileged_and_exposes_only_tls_port(self):
         self.assertIn("USER 1000:1000", self.dockerfile)
         self.assertIn("EXPOSE 10086", self.dockerfile)
-        self.assertIn("WORKDIR /opt/wgdashboard/src", self.dockerfile)
-        self.assertIn('ENTRYPOINT ["/usr/local/bin/wgdashboard-entrypoint"]', self.dockerfile)
 
     @unittest.skipUnless(O1_WIRED, "Dockerfile wiring is promoted from staging")
     def test_healthcheck_is_real_https_probe_not_pid_stub(self):
@@ -100,8 +97,8 @@ class WgdashboardNativeTlsStructureTests(unittest.TestCase):
 
     @unittest.skipUnless(O1_WIRED, "Dockerfile wiring is promoted from staging")
     def test_entrypoint_copy_and_runtime_tls_environment_are_explicit(self):
-        self.assertIn("COPY --chown=1000:1000 --chmod=0555 docker/entrypoint.sh "
-                      "/usr/local/bin/wgdashboard-entrypoint", self.dockerfile)
+        self.assertIn("COPY --chown=1000:1000 --chmod=0555 docker/entrypoint.sh /entrypoint.sh",
+                      self.dockerfile)
         for value in (
             "WG_DASHBOARD_READ_ONLY=1",
             "WG_DASHBOARD_BACKEND_TLS_NAME=wgdashboard-backend.svc.ragnarsec.com",

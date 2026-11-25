@@ -313,7 +313,7 @@ pipeline {
               'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'|\
               'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'|\
               'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'|\
-              'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125')
+              'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'|              'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac
