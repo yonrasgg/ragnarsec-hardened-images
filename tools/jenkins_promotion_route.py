@@ -51,6 +51,17 @@ RECONCILIATIONS = {
         'guard_files': ['Jenkinsfile', 'tests/test_public_jenkins_promotion_route.py',
                         'tools/jenkins_promotion_route.py'],
     },
+    '203': {
+        'source': 'fix/wgdashboard-o1-native-https',
+        'parent': 'f8bd2b94f0c7e1b8c5f24d3548aa16bf9c50edeb',
+        'bases': {
+            'development': 'f8bd2b94f0c7e1b8c5f24d3548aa16bf9c50edeb',
+            'staging': 'f8035cd71e576c9ea469a554dac0df1f07e2ba29',
+            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py',
+                      'vex/exceptions.json', 'wgdashboard/Dockerfile'],
+    },
 }
 
 
