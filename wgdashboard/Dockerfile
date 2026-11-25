@@ -49,7 +49,7 @@ RUN set -eu; \
 COPY --chown=1000:1000 --chmod=0444 src/dashboard.py /opt/wgdashboard/src/dashboard.py
 COPY --chown=1000:1000 --chmod=0444 src/readonly_mode.py /opt/wgdashboard/src/readonly_mode.py
 COPY --chown=1000:1000 --chmod=0444 src/readonly_preflight.py /opt/wgdashboard/src/readonly_preflight.py
-COPY --chown=1000:1000 --chmod=0555 docker/entrypoint.sh /usr/local/bin/wgdashboard-entrypoint
+COPY --chown=1000:1000 --chmod=0555 docker/entrypoint.sh /entrypoint.sh
 COPY --chown=1000:1000 --chmod=0555 docker/healthcheck.sh /usr/local/bin/wgdashboard-healthcheck
 
 # TLS material is supplied at runtime as a read-only bind of
@@ -78,5 +78,3 @@ EXPOSE 10086
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD ["/usr/local/bin/wgdashboard-healthcheck"]
 
-WORKDIR /opt/wgdashboard/src
-ENTRYPOINT ["/usr/local/bin/wgdashboard-entrypoint"]
