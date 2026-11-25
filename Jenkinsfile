@@ -63,6 +63,7 @@ pipeline {
         'ragnarsec-python-pdf',
         'ragnarsec-rabbitmq',
         'ragnarsec-redis-exporter',
+        'ragnarsec-scanopy',
         'ragnarsec-trivy',
         'ragnarsec-valkey',
         'ragnarsec-wgdashboard'
@@ -303,7 +304,8 @@ pipeline {
             set -- --source "$CHANGE_BRANCH"
             case "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" in
               'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'|\
-              'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout')
+              'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'|\
+              'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac
