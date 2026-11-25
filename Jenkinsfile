@@ -261,7 +261,7 @@ pipeline {
                       staging f8035cd71e576c9ea469a554dac0df1f07e2ba29
                   elif [ "$source" = "sync/staging-to-main-o1-ds007-20261125" ]; then
                     require_scoped_sync "$head" main f19dd8243c373ae954a3b8c2b635ace11d3b335e \
-                      staging 57e7be072141065ba1a15495b74751b6ccf91ba8
+                      staging 9d5d50c304133826830c5e61d7fbedab0976a3aa
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
