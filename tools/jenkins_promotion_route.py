@@ -137,6 +137,17 @@ RECONCILIATIONS = {
         'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
                       'tools/jenkins_promotion_route.py'],
     },
+    '233': {
+        'source': 'fix/repin-unblock-sync-lanes-20261125',
+        'parent': 'c9eb415a242e75adf15848df0ad4c0cd7c0fa2b7',
+        'bases': {
+            'development': '5699b18d1a3b599cb27a7783702f0912c4947ffe',
+            'staging': '6421e1b72b11dabe68c0bd3759885989fe81ee8e',
+            'main': '6abfb7aed7287c43a920427c170d26b8e4dfe76d',
+        },
+        'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
+                      'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
