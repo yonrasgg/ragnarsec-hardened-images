@@ -413,6 +413,9 @@ def validate(selected, tag, output):
         raise ValueError('exception-registry:' + ','.join(registry_problems))
     budgets_path = ROOT / 'budgets.json'
     budgeted_images = json.loads(budgets_path.read_text())
+    overrides_path = ROOT / 'budget-overrides.json'
+    if overrides_path.is_file():
+        budgeted_images.update(json.loads(overrides_path.read_text()))
     for image in plan(selected):
         name = image['name']
         test = ROOT / 'tests' / (name + '.yaml')
