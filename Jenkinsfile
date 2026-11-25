@@ -230,6 +230,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-scanopy-20261125" ]; then
                     require_scoped_sync "$head" staging f8035cd71e576c9ea469a554dac0df1f07e2ba29 \
                       development b7b53157573b0325b6c544122f1a6ac22b0903fb
+                  elif [ "$source" = "sync/development-to-staging-o1-ds007-20261125" ]; then
+                    require_scoped_sync "$head" staging d3af4e2d79a3796c73d7bef5f0c0ad9717c1304d \
+                      development 8cc8afd1c6b89c4b3ee50a26a12602ead05cdc8d
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -256,6 +259,9 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-scanopy-20261125" ]; then
                     require_scoped_sync "$head" main 84d70416ea3038f23d36bd5187af5f3b324c505b \
                       staging f8035cd71e576c9ea469a554dac0df1f07e2ba29
+                  elif [ "$source" = "sync/staging-to-main-o1-ds007-20261125" ]; then
+                    require_scoped_sync "$head" main 84d70416ea3038f23d36bd5187af5f3b324c505b \
+                      staging d3af4e2d79a3796c73d7bef5f0c0ad9717c1304d
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -313,7 +319,9 @@ pipeline {
               'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'|\
               'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'|\
               'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'|\
-              'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'|              'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007')
+              'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'|\
+              'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'|\
+              'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac
