@@ -1,0 +1,29 @@
+name: Check staging and main promotion candidates
+
+"on":
+  pull_request_target:
+    branches: [staging, main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-promotion-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify-promotion:
+    name: Verify exact promotion candidate (Actions)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out protected target policy, never PR code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Simulate this lane without merge or publication authority
+        shell: bash
+        run: python3 -B tools/promotion_candidate.py "$GITHUB_EVENT_PATH"

@@ -96,6 +96,58 @@ RECONCILIATIONS = {
                       'tools/jenkins_promotion_route.py', 'wgdashboard/Dockerfile',
                       'wgdashboard/docker/entrypoint.sh'],
     },
+    '219': {
+        'source': 'fix/o1-ds007-main-lane-repin-20261125',
+        'parent': '03c1b0ef65a579d4919afb9815b8380927c3cce0',
+        'bases': {
+            'development': '03c1b0ef65a579d4919afb9815b8380927c3cce0',
+            'staging': '57e7be072141065ba1a15495b74751b6ccf91ba8',
+            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
+    },
+    '222': {
+        'source': 'fix/o1-ds007-staging-lane-repin-20261125',
+        'parent': '5a24bca7083a9dce763b41ea5eabdb155529d71e',
+        'bases': {
+            'development': '5a24bca7083a9dce763b41ea5eabdb155529d71e',
+            'staging': '57e7be072141065ba1a15495b74751b6ccf91ba8',
+            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
+    },
+    '224': {
+        'source': 'fix/o1-ds007-lane-pins-final-20261125',
+        'parent': 'fbc5b422f439ac1e134a1a31d3fd9c46411beebb',
+        'bases': {
+            'development': 'fbc5b422f439ac1e134a1a31d3fd9c46411beebb',
+            'staging': 'e1714fa47e00163ad8e66daeba284443443e483c',
+            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
+    },
+    '215': {
+        'source': 'fix/promotion-candidate-evaluator-20261125',
+        'parent': 'ff690e27c3038d295c19b5045992ef7c924f207e',
+        'bases': {
+            'development': '15d2f3d3760a5600c2dd09849dcbf522f536d330',
+            'staging': '6421e1b72b11dabe68c0bd3759885989fe81ee8e',
+            'main': '6abfb7aed7287c43a920427c170d26b8e4dfe76d',
+        },
+        'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
+                      'tools/jenkins_promotion_route.py'],
+    },
+    '233': {
+        'source': 'fix/repin-unblock-sync-lanes-20261125',
+        'parent': 'c9eb415a242e75adf15848df0ad4c0cd7c0fa2b7',
+        'bases': {
+            'development': '5699b18d1a3b599cb27a7783702f0912c4947ffe',
+            'staging': '6421e1b72b11dabe68c0bd3759885989fe81ee8e',
+            'main': '6abfb7aed7287c43a920427c170d26b8e4dfe76d',
+        },
+        'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
+                      'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
