@@ -33,5 +33,6 @@ if [ "${WG_DASHBOARD_READ_ONLY:-0}" = 1 ]; then
         dashboard:app
 fi
 
-# Non-O1 fallback keeps the inherited upstream contract unchanged.
-exec /bin/bash /entrypoint.sh "$@"
+# The inherited upstream entrypoint was replaced by this file; never recurse.
+printf '%s\n' 'WGDashboard entrypoint: read-only mode required' >&2
+exit 64
