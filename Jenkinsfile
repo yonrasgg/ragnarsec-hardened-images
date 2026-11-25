@@ -305,7 +305,8 @@ pipeline {
             case "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" in
               'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'|\
               'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'|\
-              'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125')
+              'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'|\
+              'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac
