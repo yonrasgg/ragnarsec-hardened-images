@@ -234,8 +234,8 @@ pipeline {
                     require_scoped_sync "$head" staging d3af4e2d79a3796c73d7bef5f0c0ad9717c1304d \
                       development 8cc8afd1c6b89c4b3ee50a26a12602ead05cdc8d
                   elif [ "$source" = "sync/development-to-staging-o1-ds007-final-20261125" ]; then
-                    require_scoped_sync "$head" staging e1714fa47e00163ad8e66daeba284443443e483c \
-                      development fbc5b422f439ac1e134a1a31d3fd9c46411beebb
+                    require_scoped_sync "$head" staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e \
+                      development 5699b18d1a3b599cb27a7783702f0912c4947ffe
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -266,8 +266,8 @@ pipeline {
                     require_scoped_sync "$head" main 84d70416ea3038f23d36bd5187af5f3b324c505b \
                       staging d3af4e2d79a3796c73d7bef5f0c0ad9717c1304d
                   elif [ "$source" = "sync/staging-to-main-o1-ds007-final-20261125" ]; then
-                    require_scoped_sync "$head" main f19dd8243c373ae954a3b8c2b635ace11d3b335e \
-                      staging e1714fa47e00163ad8e66daeba284443443e483c
+                    require_scoped_sync "$head" main 6abfb7aed7287c43a920427c170d26b8e4dfe76d \
+                      staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
