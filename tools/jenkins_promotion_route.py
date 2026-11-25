@@ -13,6 +13,17 @@ from promotion_route import OID, PreflightError, Repository, RouteConflict
 SOURCE = re.compile(r'fix/[a-zA-Z0-9][a-zA-Z0-9._-]*')
 ROUTE = Path(__file__).resolve().with_name('promotion_route.py')
 RECONCILIATIONS = {
+    '207': {
+        'source': 'fix/scanopy-sync-lanes-20261125',
+        'parent': 'b643d9a17c0a4482b145b5f0093cc05fe259e534',
+        'bases': {
+            'development': 'b7b53157573b0325b6c544122f1a6ac22b0903fb',
+            'staging': 'f8035cd71e576c9ea469a554dac0df1f07e2ba29',
+            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py',
+                      'vex/exceptions.json', 'wgdashboard/Dockerfile'],
+    },
     '204': {
         'source': 'fix/scanopy-image-catalog-20261125',
         'parent': '885a8e1a50d193e78215293e76d8da16f0e91933',
