@@ -451,7 +451,7 @@ def validate(selected, tag, output):
             if name in budgeted_images:
                 size = image_layer_bytes(ref, platform, output)
                 print(f'IMAGE_LAYER_BYTES {name} {platform} {size}')
-                over = policy.check_budget(name, size, budgets_path)
+                over = policy.check_budget(name, size, budgets_path, budgeted_images)
                 if over:
                     raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,
