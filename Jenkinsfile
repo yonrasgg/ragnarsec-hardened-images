@@ -63,6 +63,7 @@ pipeline {
         'ragnarsec-python-pdf',
         'ragnarsec-rabbitmq',
         'ragnarsec-redis-exporter',
+        'ragnarsec-scanopy',
         'ragnarsec-trivy',
         'ragnarsec-valkey',
         'ragnarsec-wgdashboard'

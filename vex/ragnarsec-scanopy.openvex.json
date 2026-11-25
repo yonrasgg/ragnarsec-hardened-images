@@ -1,0 +1,16 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/yonrasgg/ragnarsec-hardened-images/vex/ragnarsec-scanopy/2026-11-25",
+  "author": "RagnarSec",
+  "timestamp": "2026-11-25T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {"name": "GHSA-82j2-j2ch-gfr8"},
+      "products": [{"@id": "pkg:cargo/rustls-webpki@0.101.7"}],
+      "status": "affected",
+      "impact_statement": "The opaque upstream Scanopy server ELF links rustls-webpki 0.101.7. The candidate carries no cargo-auditable metadata, so Trivy reports 0 HIGH/0 CRITICAL for this image; the finding is documented here rather than silently dropped. No real network discovery is enabled in this deployment (private UI continuity only), and TLS trust is not controlled by an adversary in the restricted internal ingress path.",
+      "action_statement": "Owner accepted this risk into continuity on 2026-11-25 under maximum authorization. The server is a closed upstream ELF with no vendored Rust source in this repository, so cargo update -p rustls-webpki cannot produce a byte-comparable corrected ELF here. Remediation requires an upstream-provided rebuilt ELF with a new reviewed digest; until then the catalog admits this candidate by signed digest with the vulnerability recorded as affected. Re-review before enabling discovery or any untrusted network ingress, and no later than the registry exception expiry."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+schemaVersion: 2.0.0
+metadataTest:
+  user: '1000:1000'
+  workdir: '/app'
+  entrypoint: ["/usr/local/bin/server"]
+fileExistenceTests:
+  - name: 'Scanopy server binary'
+    path: '/usr/local/bin/server'
+    shouldExist: true
+  - name: 'Scanopy UI assets'
+    path: '/app/static/_app/env.js'
+    shouldExist: true
+  - name: 'No shell'
+    path: '/bin/sh'
+    shouldExist: false
+  - name: 'No package manager'
+    path: '/usr/bin/apt'
+    shouldExist: false
+  - name: 'No docker socket'
+    path: '/var/run/docker.sock'
+    shouldExist: false
