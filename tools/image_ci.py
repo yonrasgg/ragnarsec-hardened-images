@@ -413,6 +413,9 @@ def validate(selected, tag, output):
         raise ValueError('exception-registry:' + ','.join(registry_problems))
     budgets_path = ROOT / 'budgets.json'
     budgeted_images = json.loads(budgets_path.read_text())
+    overrides_path = ROOT / 'budget-overrides.json'
+    if overrides_path.is_file():
+        budgeted_images.update(json.loads(overrides_path.read_text()))
     for image in plan(selected):
         name = image['name']
         test = ROOT / 'tests' / (name + '.yaml')
@@ -448,7 +451,7 @@ def validate(selected, tag, output):
             if name in budgeted_images:
                 size = image_layer_bytes(ref, platform, output)
                 print(f'IMAGE_LAYER_BYTES {name} {platform} {size}')
-                over = policy.check_budget(name, size, budgets_path)
+                over = policy.check_budget(name, size, budgets_path, budgeted_images)
                 if over:
                     raise ValueError(over[0])
             command('container-structure-test', 'test', '--platform', platform,

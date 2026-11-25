@@ -8,6 +8,9 @@ ARG BUILD_DATE=1970-01-01T00:00:00Z
 ARG VCS_REF=local
 ARG VERSION=dev
 
+# Pre-create a searchable directory before copying read-only config files.
+RUN install -d -m 0555 /etc/postgresql
+
 # NOTE: GPL-3.0 applies to this wrapper (Dockerfile, configs, scripts) only.
 # PostgreSQL itself remains under the PostgreSQL License (permissive, similar to MIT/BSD).
 LABEL org.opencontainers.image.source="https://github.com/yonrasgg/ragnarsec-hardened-images" \
