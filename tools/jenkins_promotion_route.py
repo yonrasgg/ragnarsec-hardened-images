@@ -13,6 +13,16 @@ from promotion_route import OID, PreflightError, Repository, RouteConflict
 SOURCE = re.compile(r'fix/[a-zA-Z0-9][a-zA-Z0-9._-]*')
 ROUTE = Path(__file__).resolve().with_name('promotion_route.py')
 RECONCILIATIONS = {
+    '204': {
+        'source': 'fix/scanopy-image-catalog-20261125',
+        'parent': '24dab1c5764bb7d5132ec9d1fa26572d8fc2adfa',
+        'bases': {
+            'development': '202fe44089ab8b3287d733817fd75c334c185a69',
+            'staging': 'f8035cd71e576c9ea469a554dac0df1f07e2ba29',
+            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
+        },
+        'conflicts': ['vex/exceptions.json'],
+    },
     '164': {
         'source': 'fix/automated-promotion-preflight',
         'parent': '1ba8a2ae90dc778ff0483535f9a31f8ba4d6f464',
