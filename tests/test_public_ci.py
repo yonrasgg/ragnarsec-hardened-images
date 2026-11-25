@@ -125,7 +125,7 @@ class ImagePlanning(unittest.TestCase):
 
     def test_all_recipes_and_multistage_parents_have_closed_plans(self):
         images = ci.catalog()
-        self.assertEqual(len(images),23)
+        self.assertEqual(len(images),24)
         self.assertNotIn('ragnarsec-zap', images)
         for selected in images:
             seen = set()

@@ -16,9 +16,11 @@ This document describes an image interface, not a deployed system.
 ## Hardening declared
 
 - Digest pinned; version tag mutable by design.
-- Runs as root because the upstream entrypoint initializes its own configuration.
-  This is declared as an exception (`allow-root`), not as a recommendation.
-- Consumer contract, enforced at deployment:
+- O1 (`WG_DASHBOARD_READ_ONLY=1`, the image default): the image runs as
+  `1000:1000` and never calls the inherited root entrypoint. The legacy root
+  behavior below describes the inherited upstream mode only and is **not** the
+  O1 deployment contract.
+- Consumer contract for the inherited mode, enforced at deployment:
   - `/etc/wireguard` mounted **read-only**;
   - `/etc/wireguard/WGDashboard_Backup` must **pre-exist** in that host directory
     and be mounted **writable** (`:rw`) as a separate volume. Upstream creates
@@ -53,6 +55,25 @@ observation, not a vulnerability or hardening result.
 
 No built-image pass is claimed in this document. Definitions are not proof of a
 passing build.
+
+### O1 native HTTPS contract
+
+- Gunicorn serves HTTPS in the foreground on `0.0.0.0:10086` with
+  `--certfile`/`--keyfile`; there is no plaintext listener, sidecar, daemon,
+  PID file or control socket. The inherited PID-file healthcheck is replaced by
+  an HTTPS probe that requires HTTP 200 on `/api/handshake`, a trusted CA and
+  the exact backend TLS name.
+- TLS material is **never** in the image: bind-mount
+  `/run/secrets/wgdashboard/{server.crt,server.key,ca.crt}` as regular files,
+  mode `0600`, owner uid `1000`, read-only. The launcher rejects missing,
+  symlinked or wrongly located files with exit 64 before binding any socket.
+- The fail-closed keyless preflight runs before the HTTP server. The reviewed
+  guard project only public WireGuard fields; mutations, backup download, OIDC
+  and API-key access are denied, and configuration status is reported as
+  unknown rather than "Off".
+- Required runtime flags: `--read-only`, `--cap-drop ALL`,
+  `--security-opt no-new-privileges=true`, one internal network, **no published
+  host ports**, uid `1000:1000`. A `:rw` backup path is not used in O1.
 
 ## Using the image
 
