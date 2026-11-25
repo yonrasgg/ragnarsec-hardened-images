@@ -227,6 +227,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-actions-base-20261124-v2" ]; then
                     require_scoped_sync "$head" staging dbf31c83b18b66b5f6b2aa14516fed4c8b01b604 \
                       development f94d751309a08107529b0fa3584ef41aac06d700
+                  elif [ "$source" = "sync/development-to-staging-scanopy-20261125" ]; then
+                    require_scoped_sync "$head" staging f8035cd71e576c9ea469a554dac0df1f07e2ba29 \
+                      development b7b53157573b0325b6c544122f1a6ac22b0903fb
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -250,6 +253,9 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-actions-base-20261124-v2" ]; then
                     require_scoped_sync "$head" main 07806bb98d24774074713f241f2922d2edc90487 \
                       staging dbf31c83b18b66b5f6b2aa14516fed4c8b01b604
+                  elif [ "$source" = "sync/staging-to-main-scanopy-20261125" ]; then
+                    require_scoped_sync "$head" main 84d70416ea3038f23d36bd5187af5f3b324c505b \
+                      staging f8035cd71e576c9ea469a554dac0df1f07e2ba29
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -306,7 +312,8 @@ pipeline {
               'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'|\
               'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'|\
               'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'|\
-              'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https')
+              'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'|\
+              'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac
