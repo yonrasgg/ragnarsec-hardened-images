@@ -23,6 +23,30 @@
       "owner": "geovanny",
       "expires": "2027-02-01",
       "evidence": "vex/ragnarsec-python-pdf.openvex.json"
+    },
+    {
+      "image": "ragnarsec-wgdashboard",
+      "cve": "CVE-2026-85394",
+      "justification": "OIDC disabled in read-only guard; jwt.decode not reachable",
+      "owner": "geovanny",
+      "expires": "2027-02-20",
+      "evidence": "vex/ragnarsec-wgdashboard.openvex.json"
+    },
+    {
+      "image": "ragnarsec-wgdashboard",
+      "cve": "CVE-2024-23342",
+      "justification": "ecdsa only transitive via python-jose; no direct use in shipped app",
+      "owner": "geovanny",
+      "expires": "2027-02-20",
+      "evidence": "vex/ragnarsec-wgdashboard.openvex.json"
+    },
+    {
+      "image": "ragnarsec-wgdashboard",
+      "cve": "CVE-2026-78661",
+      "justification": "x/net/html not imported by amneziawg-go; parser absent from linked binary",
+      "owner": "geovanny",
+      "expires": "2027-02-20",
+      "evidence": "vex/ragnarsec-wgdashboard.openvex.json"
     }
   ]
 }

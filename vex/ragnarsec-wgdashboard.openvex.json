@@ -1,0 +1,30 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/yonrasgg/ragnarsec-hardened-images/vex/ragnarsec-wgdashboard/2026-11-25",
+  "author": "RagnarSec",
+  "timestamp": "2026-11-25T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {"name": "CVE-2026-85394"},
+      "products": [{"@id": "pkg:pypi/python-jose@3.5.0"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The read-only WGDashboard guard disables OIDC (admin_enable=false, client_enable=false) and returns an inert response from /api/oidc/providers. jwt.decode is reached only from DashboardOIDC.VerifyToken, which is not in the shipped execution path."
+    },
+    {
+      "vulnerability": {"name": "CVE-2024-23342"},
+      "products": [{"@id": "pkg:pypi/ecdsa@0.19.2"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "ecdsa is present only as a transitive dependency of python-jose. The reviewed application source has no direct ECDSA import, and OIDC is disabled in the shipped read-only configuration."
+    },
+    {
+      "vulnerability": {"name": "CVE-2026-78661"},
+      "products": [{"@id": "pkg:golang/golang.org/x/net@v0.61.0"}],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The affected parser is golang.org/x/net/html. The reviewed amneziawg-go source tree has no import of net/html; the package appears only in unrelated cached modules that are not linked into the shipped binary."
+    }
+  ]
+}

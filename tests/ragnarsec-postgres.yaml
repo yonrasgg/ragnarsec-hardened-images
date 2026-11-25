@@ -12,6 +12,12 @@ fileExistenceTests:
     path: '/usr/local/bin/gosu'
     shouldExist: false
 commandTests:
+  - name: 'Postgres User Can Read Both Configs'
+    command: '/bin/sh'
+    args:
+      - '-ec'
+      - 'test "$(id -u)" = 70 && test -r /etc/postgresql/postgresql.conf && test -r /etc/postgresql/pg_hba.conf'
+    exitCode: 0
   - name: 'Postgres Version'
     command: 'postgres'
     args: ['--version']
