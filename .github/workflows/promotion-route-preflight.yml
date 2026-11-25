@@ -1,4 +1,5 @@
 name: Preflight the protected promotion route
+# policy event-admission verification: comment only, no CI logic change
 
 "on":
   pull_request_target:
