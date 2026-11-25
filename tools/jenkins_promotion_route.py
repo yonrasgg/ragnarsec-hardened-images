@@ -84,6 +84,18 @@ RECONCILIATIONS = {
         'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py',
                       'vex/exceptions.json', 'wgdashboard/Dockerfile'],
     },
+    '216': {
+        'source': 'fix/wgdashboard-o1-stage-merge-20261125',
+        'parent': '8cc8afd1c6b89c4b3ee50a26a12602ead05cdc8d',
+        'bases': {
+            'development': '8cc8afd1c6b89c4b3ee50a26a12602ead05cdc8d',
+            'staging': 'd3af4e2d79a3796c73d7bef5f0c0ad9717c1304d',
+            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
+        },
+        'conflicts': ['Jenkinsfile', 'tests/test_public_wgdashboard_native_tls.py',
+                      'tools/jenkins_promotion_route.py', 'wgdashboard/Dockerfile',
+                      'wgdashboard/docker/entrypoint.sh'],
+    },
 }
 
 
