@@ -96,6 +96,16 @@ RECONCILIATIONS = {
                       'tools/jenkins_promotion_route.py', 'wgdashboard/Dockerfile',
                       'wgdashboard/docker/entrypoint.sh'],
     },
+    '219': {
+        'source': 'fix/o1-ds007-main-lane-repin-20261125',
+        'parent': '03c1b0ef65a579d4919afb9815b8380927c3cce0',
+        'bases': {
+            'development': '03c1b0ef65a579d4919afb9815b8380927c3cce0',
+            'staging': '57e7be072141065ba1a15495b74751b6ccf91ba8',
+            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
