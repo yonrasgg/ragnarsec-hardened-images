@@ -47,6 +47,14 @@
       "owner": "geovanny",
       "expires": "2027-02-20",
       "evidence": "vex/ragnarsec-wgdashboard.openvex.json"
+    },
+    {
+      "image": "ragnarsec-scanopy",
+      "cve": "GHSA-82j2-j2ch-gfr8",
+      "justification": "Owner-accepted continuity risk 2026-11-25: opaque upstream Rust ELF links rustls-webpki 0.101.7; no server source to rebuild; scanner finds no auditable Rust metadata; private UI only, no discovery",
+      "owner": "geovanny",
+      "expires": "2027-02-20",
+      "evidence": "vex/ragnarsec-scanopy.openvex.json"
     }
   ]
 }
