@@ -5,6 +5,7 @@ FROM alpine:3.21 AS builder
 ARG TARGETARCH
 ARG REDIS_EXPORTER_VERSION=v1.99.0
 WORKDIR /tmp
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 # hadolint ignore=DL3018
 RUN apk add --no-cache curl \
     && case "${TARGETARCH}" in \
