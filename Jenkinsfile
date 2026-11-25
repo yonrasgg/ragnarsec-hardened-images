@@ -262,6 +262,9 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-o1-ds007-20261125" ]; then
                     require_scoped_sync "$head" main 84d70416ea3038f23d36bd5187af5f3b324c505b \
                       staging d3af4e2d79a3796c73d7bef5f0c0ad9717c1304d
+                  elif [ "$source" = "sync/staging-to-main-o1-ds007-final-20261125" ]; then
+                    require_scoped_sync "$head" main f19dd8243c373ae954a3b8c2b635ace11d3b335e \
+                      staging 0fc27cb693887fc13fdec02526ac9b0193e21651
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -321,7 +324,8 @@ pipeline {
               'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'|\
               'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'|\
               'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'|\
-              'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125')
+              'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125'|\
+              'ragnarsec-hardened-images/PR-219:219:fix/o1-ds007-main-lane-repin-20261125')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac
