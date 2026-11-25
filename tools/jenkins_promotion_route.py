@@ -106,6 +106,16 @@ RECONCILIATIONS = {
         },
         'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
     },
+    '222': {
+        'source': 'fix/o1-ds007-staging-lane-repin-20261125',
+        'parent': '5a24bca7083a9dce763b41ea5eabdb155529d71e',
+        'bases': {
+            'development': '5a24bca7083a9dce763b41ea5eabdb155529d71e',
+            'staging': '57e7be072141065ba1a15495b74751b6ccf91ba8',
+            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
