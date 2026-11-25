@@ -236,6 +236,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-o1-ds007-final-20261125" ]; then
                     require_scoped_sync "$head" staging 57e7be072141065ba1a15495b74751b6ccf91ba8 \
                       development 5a24bca7083a9dce763b41ea5eabdb155529d71e
+                  elif [ "$source" = "sync/development-to-staging-o1-ds007-release-20261125" ]; then
+                    require_scoped_sync "$head" staging e1714fa47e00163ad8e66daeba284443443e483c \
+                      development fbc5b422f439ac1e134a1a31d3fd9c46411beebb
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -268,6 +271,9 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-o1-ds007-final-20261125" ]; then
                     require_scoped_sync "$head" main f19dd8243c373ae954a3b8c2b635ace11d3b335e \
                       staging 0fc27cb693887fc13fdec02526ac9b0193e21651
+                  elif [ "$source" = "sync/staging-to-main-o1-ds007-release-20261125" ]; then
+                    require_scoped_sync "$head" main f19dd8243c373ae954a3b8c2b635ace11d3b335e \
+                      staging e1714fa47e00163ad8e66daeba284443443e483c
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -329,7 +335,8 @@ pipeline {
               'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'|\
               'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125'|\
               'ragnarsec-hardened-images/PR-219:219:fix/o1-ds007-main-lane-repin-20261125'|\
-              'ragnarsec-hardened-images/PR-222:222:fix/o1-ds007-staging-lane-repin-20261125')
+              'ragnarsec-hardened-images/PR-222:222:fix/o1-ds007-staging-lane-repin-20261125'|\
+              'ragnarsec-hardened-images/PR-228:228:fix/o1-ds007-release-lanes-20261125')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac

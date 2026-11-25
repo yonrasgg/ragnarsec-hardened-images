@@ -116,6 +116,16 @@ RECONCILIATIONS = {
         },
         'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
     },
+    '228': {
+        'source': 'fix/o1-ds007-release-lanes-20261125',
+        'parent': 'fbc5b422f439ac1e134a1a31d3fd9c46411beebb',
+        'bases': {
+            'development': 'fbc5b422f439ac1e134a1a31d3fd9c46411beebb',
+            'staging': 'e1714fa47e00163ad8e66daeba284443443e483c',
+            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
+        },
+        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
