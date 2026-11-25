@@ -30,5 +30,4 @@ WORKDIR /data
 # Expose ports: 9000 (API), 9001 (Console)
 EXPOSE 9000 9001
 
-ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["minio", "server", "/data", "--console-address", ":9001"]
