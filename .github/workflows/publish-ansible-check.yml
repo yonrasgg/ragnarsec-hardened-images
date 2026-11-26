@@ -74,7 +74,7 @@ jobs:
           # into a shell command. The update body omits head_sha because the
           # PATCH endpoint does not accept it.
           build_body() {
-            INCLUDE_HEAD="$1" python3 -c '
+            INCLUDE_HEAD="$1" COMPLETED_AT="$completed_at" SUMMARY="$summary" python3 -c '
           import json, os
           body = {
               "name": os.environ["CHECK_NAME"],
