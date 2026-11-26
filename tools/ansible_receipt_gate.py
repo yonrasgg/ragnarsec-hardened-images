@@ -40,7 +40,14 @@ TRUST = {
             'host_id': 'heimdall',
             'actor': 'userone',
             'key_id': 'heimdall-userone-pilot-ed25519',
-            'public_key_sha256': None,
+            # Owner-pinned public-half hash from the dedicated pilot key
+            # generated on heimdall (sha256sum of the .pub FILE, which includes
+            # its trailing newline). The receipt MUST carry that same key line
+            # WITH the trailing newline in `signer.public_key`, or step 6
+            # rejects it. No private material is stored here.
+            'public_key_sha256': (
+                'd78b1c0c693978f42ca1e4c701e35c04789cd424b14f0bbf020628e3f5799066'
+            ),
         },
     ],
     'chain': {'seq': 1, 'prev_receipt_sha256': GENESIS},
