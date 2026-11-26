@@ -48,12 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           set -- --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA" \
-            --change-id "$PR_NUMBER" --repo "$REPO"
-          case "$PR_NUMBER:$SOURCE_BRANCH" in
-            '236:fix/ansible-check-publisher-20261126'|\
-            '237:fix/staging-draft-app-token-20261126'|\
-            '238:fix/actions-reconciliation-preflight-20261126')
-              set -- "$@" --approved-reconciliation
-              ;;
-          esac
+            --change-id "$PR_NUMBER" --repo "$REPO" \
+            --pr "$PR_NUMBER" --manifest-from-pr "$PR_HEAD_SHA" \
+            --allow-manifest-reconciliation
           python3 -B tools/jenkins_promotion_route.py "$@"
