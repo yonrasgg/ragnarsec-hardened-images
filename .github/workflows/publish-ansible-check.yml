@@ -95,7 +95,9 @@ jobs:
           # Enumerate every check on this head, not just the latest one, so a
           # previously published duplicate is detected instead of compounded.
           # gh api -f sends URL-encoded query parameters on a GET request.
-          response="$(gh api --hostname github.com \
+          # gh api switches to POST when -f/--field is used; --method GET is
+          # mandatory here or the check-runs listing returns HTTP 404.
+          response="$(gh api --hostname github.com --method GET \
             "repos/${REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
             -f check_name="$CHECK_NAME" -f filter=all -f per_page=100)"
 
