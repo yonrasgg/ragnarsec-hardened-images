@@ -160,6 +160,18 @@ RECONCILIATIONS = {
                       'tests/test_public_prepare_staging_draft.py',
                       'tools/jenkins_promotion_route.py'],
     },
+    '237': {
+        'source': 'fix/staging-draft-app-token-20261126',
+        'parent': '13dfa27add895edd74b6a9f5a68483e1e51cc5be',
+        'bases': {
+            'development': '13dfa27add895edd74b6a9f5a68483e1e51cc5be',
+            'staging': 'e5b1d84b2c7f8de69016b56a94a2a24116201c71',
+            'main': '57bec7ffc5aa4baf87dfbf333d3b087c5b2befea',
+        },
+        'conflicts': ['.github/workflows/prepare-staging-draft.yml', 'Jenkinsfile',
+                      'tests/ci_workflow_contracts.py', 'tests/test_public_prepare_staging_draft.py',
+                      'tools/jenkins_promotion_route.py'],
+    },
 }
 
 

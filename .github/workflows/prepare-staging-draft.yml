@@ -64,9 +64,21 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.policy }}
           persist-credentials: false
+      # POST /repos/{owner}/{repo}/pulls needs an installation access token
+      # carrying "Pull requests" repository permission (write). GITHUB_TOKEN is
+      # refused with HTTP 403 when "Allow GitHub Actions to create and approve
+      # pull requests" is off, so the draft is created with the trusted App.
+      - name: Create the GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0 (v3)
+        with:
+          app-id: '5929884'
+          private-key: ${{ secrets.RAGNARSEC_ANSIBLE_APP_PRIVATE_KEY }}
+          owner: yonrasgg
+          repositories: ragnarsec-hardened-images
       - name: Recheck and create only a draft
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ANSIBLE_APP_ID: ${{ vars.RAGNARSEC_ANSIBLE_APP_ID }}
           ANSIBLE_CHECK_NAME: ${{ vars.RAGNARSEC_ANSIBLE_CHECK_NAME }}
           CREATE_STAGING_DRAFTS: ${{ vars.RAGNARSEC_CREATE_STAGING_DRAFTS }}
