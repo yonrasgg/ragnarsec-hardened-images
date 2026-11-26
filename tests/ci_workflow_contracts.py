@@ -18,6 +18,8 @@ MIGRATED = (
     'promotion-route-preflight.yml',
     'check-promotion-candidate.yml',
     'prepare-staging-draft.yml',
+    # CI-004 corrective: untrusted half of the automatic-draft split.
+    'staging-draft-merge-trigger.yml',
 )
 
 
@@ -27,9 +29,10 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
         reviewed = {
             'check-promotion-candidate.yml': '2192483f591dd4f587eba81bc99c84fdd9b0578f18db0365ddbc3255c328ef3a',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
-            'prepare-staging-draft.yml': '265e1876e01d3552b4ca337e547b450db78a5bf1b57735a1ab42582f8ad0186d',
+            'prepare-staging-draft.yml': '61a6c891b01a3d1efad1d590610eb3cab3731871cb536bad071c19448e456d2f',
             'promotion-route-preflight.yml': '96332ab904393044443589a67569979a283a6076f0010cbd0cf5c71261517205',
             'publish-ansible-check.yml': '28e73414e4e202c9aea34c5f0470d97d7b42e9ea48b12ba73ac0afd7e2bb03be',
+            'staging-draft-merge-trigger.yml': '904d30bc54ac515e11e659c4e8c630428950a1c6c43d2f75ee336b79c6ad3f5c',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
         for name, digest in reviewed.items():
@@ -87,15 +90,21 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
         self.assertNotIn('secrets.', workflow)
         self.assertNotIn('pull-requests: write', workflow)
 
-    def test_staging_draft_is_dispatch_only_with_owner_app_token(self):
-        # The privileged draft/POST workflow must be owner-triggered on the
-        # protected ref; it must never consume a pull_request_target event.
+    def test_staging_draft_is_automatic_with_owner_app_token_and_manual_squash(self):
+        # CI-004 corrective: draft creation is AUTOMATIC via a protected-base
+        # workflow_run; the squash remains manual. The privileged file must
+        # never be triggered by an untrusted PR event, and the App token stays
+        # confined to the draft POST job.
         workflow = (suite.ROOT / '.github/workflows/prepare-staging-draft.yml').read_text()
         self.assertNotIn('pull_request_target', workflow)
-        self.assertIn('  workflow_dispatch:', workflow)
+        self.assertNotIn('  pull_request:', workflow)
+        self.assertIn('  workflow_dispatch:', workflow)  # owner path retained
         self.assertIn('      integrated_pr:', workflow)
-        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
-        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn('  workflow_run:', workflow)
+        self.assertIn('workflows: ["Staging draft merge trigger"]', workflow)
+        self.assertIn('types: [completed]', workflow)
+        self.assertIn("github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'",
+                      workflow)
         self.assertIn('ref: refs/heads/main', workflow)
         self.assertIn('persist-credentials: false', workflow)
         self.assertIn('secrets.RAGNARSEC_ANSIBLE_APP_PRIVATE_KEY', workflow)
@@ -103,8 +112,42 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
         self.assertIn('pull-requests: write', workflow)
         self.assertIn("vars.RAGNARSEC_CREATE_STAGING_DRAFTS == 'true'", workflow)
         self.assertIn('python3 -B tools/prepare_staging_draft.py --create-plan "$PLAN"', workflow)
+        # Manual squash gate: the tool creates draft:true and prints the
+        # human-review result; no publication or bypass marker is present.
+        self.assertIn('draft', workflow)  # documented in the trust boundary
         self.assertNotIn('PUBLISH', workflow)
         self.assertNotIn('--admin', workflow)
+        self.assertNotIn('auto-merge', workflow)
+
+    def test_staging_draft_trigger_is_untrusted_and_secret_free(self):
+        # The automatic trigger runs on the untrusted PR event and must never
+        # hold a credential or a write scope.
+        workflow = (suite.ROOT / '.github/workflows/staging-draft-merge-trigger.yml').read_text()
+        self.assertIn('  pull_request:', workflow)
+        self.assertNotIn('pull_request_target', workflow)
+        self.assertIn('branches: [development]', workflow)
+        self.assertIn('types: [closed]', workflow)
+        self.assertIn('permissions: {}', workflow)
+        self.assertNotIn('secrets.', workflow)
+        self.assertNotIn('pull-requests: write', workflow)
+        self.assertNotIn('actions/create-github-app-token', workflow)
+        self.assertNotIn('GITHUB_OUTPUT', workflow)  # emits no trusted outputs
+        self.assertNotIn('  workflow_run:', workflow)  # it is the trigger, not the watcher
+
+    def test_workflow_run_number_is_never_taken_from_untrusted_outputs(self):
+        # The privileged workflow must derive integrated_pr only from GitHub-
+        # populated workflow_run metadata or a signed-head API lookup, and must
+        # pass it through the trusted resolver output.
+        workflow = (suite.ROOT / '.github/workflows/prepare-staging-draft.yml').read_text()
+        self.assertIn('INTEGRATED_PR: ${{ needs.resolve-integrated-pr.outputs.number }}', workflow)
+        self.assertIn('RUN_HEAD_REPO_ID: ${{ github.event.workflow_run.head_repository.id }}',
+                      workflow)
+        self.assertIn('RUN_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}',
+                      workflow)
+        self.assertIn("[[ \"$RUN_EVENT\" == 'pull_request' ]]", workflow)
+        self.assertIn("[[ \"$RUN_HEAD_REPO_ID\" == '1426336836' ]]", workflow)
+        self.assertNotIn('needs.note-merge.outputs', workflow)
+        self.assertNotIn('needs.staging-draft-merge-trigger.outputs', workflow)
 
     def test_no_insecure_transport_or_pr_tree_verifier(self):
         # ADR-010:70: no -k acceptance, no proxy_ssl_verify off. A verifier

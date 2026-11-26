@@ -1,13 +1,18 @@
 from copy import deepcopy
+import io
+import json
+import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from ansible_receipt_gate import reviewed_tree_sha
 from prepare_staging_draft import (
-    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft,
+    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft, run,
 )
 
 
@@ -231,3 +236,63 @@ class StagingDraftTests(unittest.TestCase):
         with self.assertRaisesRegex(Hold, 'ansible-head-parent-not-single'):
             self.plan()
         self.assertFalse(self.posts)
+
+    # --- CI-004 corrective: workflow_run event dispatch (new, not weakening) ---
+
+    def _run_with_workflow_run(self, event, integrated_pr, convention='workflow_run'):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'event.json'
+            path.write_text(json.dumps(event))
+            env = dict(GITHUB_REPOSITORY=REPO, GITHUB_EVENT_PATH=str(path),
+                       GITHUB_EVENT_NAME=convention, ANSIBLE_APP_ID=str(self.app),
+                       ANSIBLE_CHECK_NAME=self.name, GITHUB_OUTPUT=str(Path(tmp) / 'out'))
+            if integrated_pr is not None:
+                env['INTEGRATED_PR'] = integrated_pr
+            out = io.StringIO()
+            with patch.dict(os.environ, env, clear=True), \
+                 patch('sys.argv', ['prepare_staging_draft.py']), \
+                 patch('sys.stdout', out), \
+                 patch('prepare_staging_draft.api',
+                       side_effect=lambda method, p, body=None: self.get(p)):
+                rc = run()
+            return rc, json.loads(out.getvalue())
+
+    def _workflow_run_event(self, *, convention='pull_request', repo_id=REPO_ID):
+        return dict(workflow_run=dict(event=convention, conclusion='success',
+                                      head_repository=dict(id=repo_id),
+                                      pull_requests=[dict(number=17)]))
+
+    def test_workflow_run_plans_from_trusted_integrated_pr(self):
+        # A trusted workflow_run event with a validated INTEGRATED_PR produces
+        # exactly the same plan as the dispatch path; plan_draft re-validates
+        # all API facts before any draft can be created.
+        rc, report = self._run_with_workflow_run(self._workflow_run_event(), '17')
+        self.assertEqual(rc, 0)
+        self.assertEqual(report['result'], 'human-staging-draft-preflight')
+        self.assertEqual(report['pr'], 17)
+
+    def test_workflow_run_rejects_wrong_event_or_repo(self):
+        for event in (self._workflow_run_event(convention='push'),
+                      self._workflow_run_event(repo_id=1)):
+            with self.subTest(event=event):
+                rc, report = self._run_with_workflow_run(event, '17')
+                self.assertEqual(rc, 0)  # Hold on preflight is a no-op hold
+                self.assertEqual(report['result'], 'held')
+                self.assertEqual(report['reason'], 'ignored-event')
+
+    def test_workflow_run_rejects_missing_or_invalid_integrated_pr(self):
+        for value in (None, '', '0', 'abc', '17;drop', '1' * 11):
+            with self.subTest(value=value):
+                rc, report = self._run_with_workflow_run(self._workflow_run_event(), value)
+                self.assertEqual(rc, 0)
+                self.assertEqual(report['result'], 'held')
+                self.assertEqual(report['reason'], 'invalid-pr-number')
+
+    def test_legacy_pull_request_target_dispatch_is_removed(self):
+        # The dangerous branch is gone: the privileged PR-close event can no
+        # longer enable the credential-minting path in this tool.
+        event = dict(action='closed', pull_request=dict(merged=True), number=17)
+        rc, report = self._run_with_workflow_run(
+            event, '17', convention='pull_request_target')
+        self.assertEqual(rc, 0)
+        self.assertEqual(report, dict(result='held', reason='ignored-event'))
