@@ -190,7 +190,7 @@ def verify_signature(payload, signature, identity, public_key):
     return True, ''
 
 
-def verify_receipt(raw, *, head_sha, head_tree_sha, head_tree_entries,
+def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entries,
                    trust=None, now=None, repo=None,
                    receipt_path=RECEIPT_PATH,
                    max_age_seconds=MAX_AGE_SECONDS):
@@ -199,7 +199,12 @@ def verify_receipt(raw, *, head_sha, head_tree_sha, head_tree_entries,
     `head_tree_sha` is the exact tree returned by
     GET /repos/{owner}/{repo}/git/commits/{head_sha}; `head_tree_entries`
     is GET /repos/{owner}/{repo}/git/trees/{head_tree_sha} (non-recursive).
-    Returns a decision dict; `ok` is True only after every step passes.
+    `parent_sha` is the single parent of that commit: the reviewed commit
+    whose tree the receipt describes. A receipt stored in the tree it
+    validates cannot bind to the hash of the commit that contains it, so the
+    binding is to the reviewed parent instead (two-commit design). Tree
+    binding, signature, registry, freshness, hashes and result checks are
+    unchanged. Returns a decision dict; `ok` only after every step passes.
     """
     trust = trust if trust is not None else TRUST
     now = now if now is not None else datetime.now(timezone.utc)
@@ -208,6 +213,7 @@ def verify_receipt(raw, *, head_sha, head_tree_sha, head_tree_entries,
         'ok': False, 'step': 0, 'reason': 'not-verified',
         'receipt_sha256': receipt_sha, 'external_id': None,
         'target_tree_sha': None, 'head_tree_sha': head_tree_sha,
+        'parent_sha': parent_sha,
         'reviewed_tree_sha': None, 'ansible_version': None, 'result': None,
         'details_url': None, 'receipt_ref': None, 'verification_time': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
         'title': 'no valid Ansible validation receipt', 'text': '',
@@ -226,6 +232,10 @@ def verify_receipt(raw, *, head_sha, head_tree_sha, head_tree_entries,
         # Step 1 — caller-supplied context (PR shape is re-checked by the workflow).
         if not _oid40(head_sha) or not _oid40(head_tree_sha):
             return fail(1, 'head-context-malformed')
+        # The reviewed parent is mandatory: without it a receipt could never
+        # bind truthfully to a commit that contains it. Fail closed if absent.
+        if not _oid40(parent_sha):
+            return fail(1, 'parent-context-malformed')
 
         # Step 2 — expected tree resolved from the PR head by the caller.
         expected_tree = head_tree_sha
@@ -307,8 +317,11 @@ def verify_receipt(raw, *, head_sha, head_tree_sha, head_tree_entries,
         if not _oid40(receipt.get('target_tree_sha')) or receipt['target_tree_sha'] != bound_tree:
             return fail(8, 'target-tree-mismatch')
 
-        # Step 9 — commit binding.
-        if not _oid40(receipt.get('target_commit_sha')) or receipt['target_commit_sha'] != head_sha:
+        # Step 9 — commit binding to the REVIEWED PARENT, not the head that
+        # carries this receipt. Step 8 still binds the head tree with receipts/
+        # removed; together they pin (reviewed tree, reviewed parent commit).
+        if (not _oid40(receipt.get('target_commit_sha'))
+                or receipt['target_commit_sha'] != parent_sha):
             return fail(9, 'target-commit-mismatch')
 
         # Step 10 — freshness: no future date, inside the owner window.
@@ -407,6 +420,7 @@ def verify_receipt(raw, *, head_sha, head_tree_sha, head_tree_entries,
             f'receipt_sha256={receipt_sha}',
             f'target_tree_sha={bound_tree}',
             f'head_tree_sha={head_tree_sha}',
+            f'target_commit_sha={receipt.get("target_commit_sha")}',
             f'verification_time={decision["verification_time"]}',
             f'ansible_version={decision["ansible_version"]}',
             'result=pass',
@@ -444,6 +458,13 @@ def live_decision():
         tree_sha = (commit.get('tree') or {}).get('sha')
         if not _oid40(tree_sha):
             raise RuntimeError('head-tree-unresolved')
+        # The reviewed parent comes from the API commit object, never from an
+        # env var or from receipt content. A merge/multi-parent head is refused.
+        parents = commit.get('parents') or []
+        if (len(parents) != 1 or not isinstance(parents[0], dict)
+                or not _oid40(parents[0].get('sha'))):
+            raise RuntimeError('head-parent-not-single')
+        parent_sha = parents[0]['sha']
         tree = json.loads(_gh_json(f'repos/{repo}/git/trees/{tree_sha}', token))
         entries = tree.get('tree')
         if tree.get('truncated') is True or not isinstance(entries, list):
@@ -454,8 +475,9 @@ def live_decision():
             raise RuntimeError('receipt-encoding-invalid')
         import base64
         raw = base64.b64decode(''.join(content['content'].split()), validate=True)
-        return verify_receipt(raw, head_sha=head, head_tree_sha=tree_sha,
-                              head_tree_entries=entries, trust=TRUST, now=now,
+        return verify_receipt(raw, head_sha=head, parent_sha=parent_sha,
+                              head_tree_sha=tree_sha, head_tree_entries=entries,
+                              trust=TRUST, now=now,
                               repo=repo, receipt_path=receipt_path)
     except Exception as exc:
         reason = f'fetch-error:{type(exc).__name__}'

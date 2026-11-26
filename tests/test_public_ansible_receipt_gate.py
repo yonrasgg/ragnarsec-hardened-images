@@ -19,6 +19,7 @@ from ansible_receipt_gate import (  # noqa: E402
 )
 
 HEAD = '1' * 40
+PARENT = '2' * 40  # reviewed parent commit; the receipt lives inside HEAD
 NOW = datetime(2026, 11, 26, 0, 0, tzinfo=timezone.utc)
 VERSION = 'ansible [core 2.19.11]'
 
@@ -85,7 +86,7 @@ class ReceiptGateTests(unittest.TestCase):
         outputs_sha = sha256_bytes(canonical_bytes(captures))
         return {
             'schema': SCHEMA, 'run_id': 'run-1',
-            'target_tree_sha': self.reviewed_tree, 'target_commit_sha': HEAD,
+            'target_tree_sha': self.reviewed_tree, 'target_commit_sha': PARENT,
             'playbook_sha': '2' * 64, 'inventory_sha': '3' * 64,
             'commands': commands,
             'outputs_sha256': outputs_sha,
@@ -107,7 +108,7 @@ class ReceiptGateTests(unittest.TestCase):
         }
 
     def verify(self, raw, **overrides):
-        kwargs = dict(head_sha=HEAD, head_tree_sha=self.head_tree,
+        kwargs = dict(head_sha=HEAD, parent_sha=PARENT, head_tree_sha=self.head_tree,
                       head_tree_entries=self.entries, trust=self.trust,
                       now=NOW, repo='yonrasgg/ragnarsec-hardened-images',
                       receipt_path=RECEIPT_PATH)
@@ -182,6 +183,18 @@ class ReceiptGateTests(unittest.TestCase):
         decision, _ = self.accepted(lambda r: r.update(target_commit_sha='3' * 40))
         self.assertFalse(decision['ok'])
         self.assertIn('step-9', decision['reason'])
+
+    def test_rejects_receipt_bound_to_head_instead_of_reviewed_parent(self):
+        decision, _ = self.accepted(lambda r: r.update(target_commit_sha=HEAD))
+        self.assertFalse(decision['ok'])
+        self.assertIn('step-9', decision['reason'])
+
+    def test_rejects_missing_parent_context(self):
+        receipt = self.receipt()
+        raw = self.sign(receipt)
+        decision = self.verify(raw, parent_sha=None)
+        self.assertFalse(decision['ok'])
+        self.assertIn('step-1', decision['reason'])
 
     def test_rejects_stale_and_future_dated_receipt(self):
         for offset in (-8 * 24 * 3600, 3600):

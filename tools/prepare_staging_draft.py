@@ -20,6 +20,7 @@ RECEIPT_REF = re.compile(r'\breceipt_ref=([^\s]+)\b')
 RECEIPT_SHA = re.compile(r'\breceipt_sha256=([a-f0-9]{64})\b')
 TARGET_TREE = re.compile(r'\btarget_tree_sha=([a-f0-9]{40})\b')
 HEAD_TREE = re.compile(r'\bhead_tree_sha=([a-f0-9]{40})\b')
+TARGET_COMMIT = re.compile(r'\btarget_commit_sha=([a-f0-9]{40})\b')
 
 
 class Hold(Exception):
@@ -62,9 +63,9 @@ def receipt_binding(check, tree, reviewed):
 
     The check's external_id is the SHA-256 of the exact receipt bytes. The
     check text must repeat that hash, an allowlisted EVD receipt path, the
-    full head tree and the reviewed tree (head tree minus the evidence path,
-    which a self-referential in-tree receipt cannot bind to). Any absence is
-    a Hold, never a draft.
+    full head tree, the reviewed tree (head tree minus the evidence path,
+    which a self-referential in-tree receipt cannot bind to) and the reviewed
+    parent commit the receipt binds to. Any absence is a Hold, never a draft.
     """
     external_id = check.get('external_id')
     text = (check.get('output') or {}).get('text')
@@ -76,7 +77,8 @@ def receipt_binding(check, tree, reviewed):
     ref = RECEIPT_REF.search(text)
     bound = TARGET_TREE.search(text)
     head = HEAD_TREE.search(text)
-    if sha is None or ref is None or bound is None or head is None:
+    commit = TARGET_COMMIT.search(text)
+    if sha is None or ref is None or bound is None or head is None or commit is None:
         return None
     if (sha.group(1) != external_id or head.group(1) != tree
             or bound.group(1) != reviewed):
@@ -86,7 +88,8 @@ def receipt_binding(check, tree, reviewed):
             or '..' in path or not path.endswith('/receipt.json')):
         return None
     return dict(external_id=external_id, receipt_ref=path,
-                target_tree_sha=bound.group(1), head_tree_sha=head.group(1))
+                target_tree_sha=bound.group(1), head_tree_sha=head.group(1),
+                target_commit_sha=commit.group(1))
 
 
 def plan_draft(get, number, check_name, app_id):
@@ -113,8 +116,15 @@ def plan_draft(get, number, check_name, app_id):
             and signature.get('reason') == 'valid' and len(parents) == 1 and oid(parents[0])
             and oid(tree), 'development-squash-not-verified')
     parent = parents[0]
-    require(get(f'git/commits/{head}')['tree']['sha'] == tree,
+    head_commit = get(f'git/commits/{head}')
+    require((head_commit.get('tree') or {}).get('sha') == tree,
             'development-tree-is-not-the-reviewed-head-tree')
+    # The receipt commit is a child of the reviewed commit; the GATE binds to
+    # that single parent. Read it from the API commit, never from the check.
+    head_parents = [p.get('sha') for p in (head_commit.get('parents') or [])
+                    if isinstance(p, dict)]
+    require(len(head_parents) == 1 and oid(head_parents[0]),
+            'ansible-head-parent-not-single')
     rules = get('rules/branches/development')
     require(any(r.get('type') == 'required_status_checks'
                 and r['parameters'].get('strict_required_status_checks_policy') is True
@@ -143,13 +153,16 @@ def plan_draft(get, number, check_name, app_id):
     reviewed = reviewed_tree_sha(tree_entries)
     receipt = receipt_binding(check, tree, reviewed)
     require(receipt is not None, 'ansible-receipt-not-bound')
+    require(receipt['target_commit_sha'] == head_parents[0],
+            'ansible-receipt-not-bound-to-reviewed-parent')
     require(get(f'git/commits/{stage}')['tree']['sha'] != tree, 'nothing-new-for-staging')
     require(get(OPEN_DRAFTS) == [], 'staging-pr-already-open')
     return dict(pr=number, head=head, development=dev, staging=stage,
                 ansible_check=check['id'], ansible_receipt=receipt['external_id'],
                 ansible_receipt_ref=receipt['receipt_ref'],
                 ansible_receipt_tree=receipt['target_tree_sha'],
-                ansible_receipt_head_tree=receipt['head_tree_sha'])
+                ansible_receipt_head_tree=receipt['head_tree_sha'],
+                ansible_receipt_commit=receipt['target_commit_sha'])
 
 
 def create_once(get, post, number, check_name, app_id, expected):

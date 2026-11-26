@@ -20,6 +20,7 @@ from ansible_receipt_gate import (  # noqa: E402
 
 OWNER_PIN = 'd78b1c0c693978f42ca1e4c701e35c04789cd424b14f0bbf020628e3f5799066'
 HEAD = '1' * 40
+PARENT = '2' * 40  # reviewed parent; the receipt is a child of this commit
 NOW = datetime(2026, 11, 26, 0, 0, tzinfo=timezone.utc)
 VERSION = 'ansible [core 2.19.11]'
 
@@ -75,7 +76,7 @@ class OwnerPinTests(unittest.TestCase):
                      'stderr_sha256': c['stderr_sha256']} for c in commands]
         return {
             'schema': SCHEMA, 'run_id': 'run-pin',
-            'target_tree_sha': self.bound, 'target_commit_sha': HEAD,
+            'target_tree_sha': self.bound, 'target_commit_sha': PARENT,
             'playbook_sha': '2' * 64, 'inventory_sha': '3' * 64,
             'commands': commands, 'outputs_sha256': sha256_bytes(canonical_bytes(captures)),
             'ansible_version': VERSION,
@@ -103,8 +104,9 @@ class OwnerPinTests(unittest.TestCase):
         return canonical_bytes(receipt)
 
     def verify(self, raw, trust):
-        return verify_receipt(raw, head_sha=HEAD, head_tree_sha=self.head_tree,
-                              head_tree_entries=self.entries, trust=trust, now=NOW,
+        return verify_receipt(raw, head_sha=HEAD, parent_sha=PARENT,
+                              head_tree_sha=self.head_tree, head_tree_entries=self.entries,
+                              trust=trust, now=NOW,
                               repo='yonrasgg/ragnarsec-hardened-images',
                               receipt_path=RECEIPT_PATH)
 
@@ -138,6 +140,14 @@ class OwnerPinTests(unittest.TestCase):
         decision = self.verify(raw, self.local_trust)
         self.assertFalse(decision['ok'])
         self.assertIn('step-6', decision['reason'])
+
+    def test_fail_closed_when_receipt_binds_head_instead_of_parent(self):
+        receipt = self.receipt()
+        receipt['target_commit_sha'] = HEAD
+        raw = self.sign(receipt)
+        decision = self.verify(raw, self.local_trust)
+        self.assertFalse(decision['ok'])
+        self.assertIn('step-9', decision['reason'])
 
 
 if __name__ == '__main__':

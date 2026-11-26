@@ -14,6 +14,7 @@ from prepare_staging_draft import (
 class StagingDraftTests(unittest.TestCase):
     def setUp(self):
         self.fix, self.prior, self.dev, self.staging, self.tree = [c * 40 for c in 'abcde']
+        self.reviewed_parent = '6' * 40  # parent of the fix head; receipt binds here
         self.name, self.app = 'ansible/validate', 5929884
         self.receipt_sha = 'f' * 64
         self.receipt_ref = ('40-Evidence/Audits/change-validation/heimdall/'
@@ -29,6 +30,7 @@ class StagingDraftTests(unittest.TestCase):
             f'receipt_sha256={self.receipt_sha}',
             f'target_tree_sha={self.reviewed_tree}',
             f'head_tree_sha={self.tree}',
+            f'target_commit_sha={self.reviewed_parent}',
             'verification_time=2026-11-26T00:00:00Z',
             'result=pass',
         ))
@@ -44,7 +46,8 @@ class StagingDraftTests(unittest.TestCase):
             'git/ref/heads/staging': dict(object=dict(sha=self.staging)),
             f'commits/{self.dev}': dict(sha=self.dev, parents=[dict(sha=self.prior)], commit=dict(
                 tree=dict(sha=self.tree), verification=dict(verified=True, reason='valid'))),
-            f'git/commits/{self.fix}': dict(tree=dict(sha=self.tree)),
+            f'git/commits/{self.fix}': dict(tree=dict(sha=self.tree),
+                                            parents=[dict(sha=self.reviewed_parent)]),
             f'git/commits/{self.staging}': dict(tree=dict(sha='2' * 40)),
             f'git/trees/{self.tree}': dict(tree=self.tree_entries, truncated=False),
             'rules/branches/development': [dict(type='required_status_checks', parameters=dict(
@@ -208,5 +211,23 @@ class StagingDraftTests(unittest.TestCase):
     def test_no_draft_before_fix_enters_development(self):
         self.data['pulls/17']['merged'] = False
         with self.assertRaisesRegex(Hold, 'not-an-integrated-fix'):
+            self.plan()
+        self.assertFalse(self.posts)
+
+    def test_wrong_reviewed_parent_binding_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        original = check['output']['text']
+        check['output']['text'] = original.replace(
+            f'target_commit_sha={self.reviewed_parent}', 'target_commit_sha=' + '7' * 40)
+        try:
+            with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound-to-reviewed-parent'):
+                self.plan()
+        finally:
+            check['output']['text'] = original
+        self.assertFalse(self.posts)
+
+    def test_fix_head_without_single_parent_holds_the_draft(self):
+        self.data[f'git/commits/{self.fix}']['parents'] = []
+        with self.assertRaisesRegex(Hold, 'ansible-head-parent-not-single'):
             self.plan()
         self.assertFalse(self.posts)
