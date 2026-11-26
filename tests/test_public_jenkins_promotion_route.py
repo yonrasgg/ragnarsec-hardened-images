@@ -13,12 +13,20 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / 'tools/jenkins_promotion_route.py'
 sys.path.insert(0, str(ROOT / 'tools'))
 from jenkins_promotion_route import (
-    RECONCILIATIONS,
+    OWNER_SSH_PUBLIC_KEY,
     RouteUnavailable,
+    canonical_manifest,
+    check,
     plan_reconciliation,
+    require_actions_reconciliation_context,
     require_reconciliation_context,
     require_reconciliation_pins,
+    verify_manifest_signature,
 )
+
+
+SIGN_NAMESPACE = 'ragnarsec-promotion-reconciliation-v1'
+SIGN_IDENTITY = 'ragnarsec-owner'
 
 
 class JenkinsPromotionRoute(unittest.TestCase):
@@ -32,6 +40,12 @@ class JenkinsPromotionRoute(unittest.TestCase):
         self.git(self.remote, 'config', 'user.email', 'route-fixture@invalid')
         self.git(self.remote, 'config', 'commit.gpgsign', 'false')
         self.base = self.commit('README.md', 'common\n')
+        # A disposable owner key: the tool must verify against the pinned public
+        # key, so a fixture manifest is signed with this key and patched in.
+        self.key = Path(temp.name) / 'owner_key'
+        subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(self.key)],
+                       check=True, capture_output=True, timeout=30)
+        self.owner_key = Path(str(self.key) + '.pub').read_text().strip()
 
     def git(self, repo, *args):
         return subprocess.run(['git', '-C', str(repo), *args], check=True,
@@ -46,6 +60,24 @@ class JenkinsPromotionRoute(unittest.TestCase):
 
     def branch(self, name, base):
         self.git(self.remote, 'switch', '-qc', name, base)
+
+    def signed_manifest(self, *, pr='237', source='fix/reviewed-change', parent=None,
+                        reviewed_head=None, reviewed_tree=None, bases=None,
+                        conflicts=None, run_id='fixture-run', guards=None,
+                        signer=None):
+        body = {'schema_version': 1, 'pr': str(pr), 'source_branch': source,
+                'parent': parent or 'a' * 40, 'reviewed_head': reviewed_head or 'b' * 40,
+                'reviewed_tree': reviewed_tree or 'c' * 40,
+                'bases': bases or {name: d * 40 for d, name in zip('123',
+                                    ('development', 'staging', 'main'))},
+                'conflict_paths': conflicts or ['receipt.sh'], 'run_id': run_id}
+        if guards is not None:
+            body['guard_files'] = guards
+        payload = canonical_manifest(body)
+        signed = subprocess.run(['ssh-keygen', '-Y', 'sign', '-f', str(signer or self.key),
+                                 '-n', SIGN_NAMESPACE, '-'], input=payload,
+                                check=True, capture_output=True, timeout=30).stdout.decode()
+        return dict(body, signature=signed)
 
     def setup_checkout(self, *, conflict):
         self.branch('main', self.base)
@@ -85,56 +117,159 @@ class JenkinsPromotionRoute(unittest.TestCase):
         inputs = {name: self.git(self.checkout, 'rev-parse', 'origin/' + name)
                   for name in ('development', 'staging', 'main')}
         inputs['fix_head'] = self.git(self.checkout, 'rev-parse', 'HEAD')
-        report = plan_reconciliation(self.checkout, inputs)
+        tree = self.git(self.checkout, 'rev-parse', 'HEAD^{tree}')
+        report = plan_reconciliation(self.checkout, inputs, tree)
         self.assertEqual(report['result'], 'pass')
         self.assertFalse(report['merge_authorized'])
         self.assertTrue(report['requires_verified_reconciliation_prs'])
-        tree = self.git(self.checkout, 'rev-parse', 'HEAD^{tree}')
+        self.assertEqual(report['reviewed_tree'], tree)
         self.assertEqual([p['tree'] for p in report['phases']], [tree] * 3)
         self.assertEqual([p['base_sha'] for p in report['phases'][1:]],
                          [inputs['staging'], inputs['main']])
+        with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-reviewed-tree-mismatch'):
+            plan_reconciliation(self.checkout, inputs, 'f' * 40)
         self.assertEqual(before, self.git(self.checkout, 'show-ref'))
 
     def test_approved_reconciliation_cannot_be_requested_by_other_jobs_or_actions(self):
+        manifest = self.signed_manifest(pr='164', source='fix/automated-promotion-preflight')
+        with patch('jenkins_promotion_route.OWNER_SSH_PUBLIC_KEY', self.owner_key):
+            verify_manifest_signature(manifest)
         exact = dict(JOB_NAME='ragnarsec-hardened-images/PR-164', CHANGE_ID='164',
                      CHANGE_TARGET='development')
-        source = 'fix/automated-promotion-preflight'
-        require_reconciliation_context(source, None, exact)
-        for branch, action, env in (
-                ('fix/other', None, exact), (source, '1'*40, exact),
-                (source, None, dict(exact, CHANGE_ID='165')),
-                (source, None, dict(exact, JOB_NAME='folder/PR-164')),
-                (source, None, dict(exact, CHANGE_TARGET='staging'))):
-            with self.subTest(branch=branch, action=action, env=env):
+        require_reconciliation_context(manifest, manifest['source_branch'], exact)
+        for env in (dict(exact, CHANGE_ID='165'),
+                    dict(exact, JOB_NAME='folder/PR-164'),
+                    dict(exact, CHANGE_TARGET='staging'),
+                    dict(exact, CHANGE_FORK='fork/repo')):
+            with self.subTest(env=env):
                 with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
-                    require_reconciliation_context(branch, action, env)
+                    require_reconciliation_context(manifest, manifest['source_branch'], env)
+        with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
+            require_reconciliation_context(manifest, 'fix/other', exact)
 
-    def test_actions_checkout_reconciliation_is_scoped_to_pr173_and_reviewed_files(self):
-        approved = RECONCILIATIONS['173']
+    def test_actions_checkout_reconciliation_is_scoped_to_signed_manifest_and_reviewed_tree(self):
+        manifest = self.signed_manifest(pr='173', source='fix/actions-promotion-base-checkout',
+                                        guards=['Jenkinsfile', 'tools/jenkins_promotion_route.py'])
         env = dict(JOB_NAME='ragnarsec-hardened-images/PR-173', CHANGE_ID='173',
                    CHANGE_TARGET='development')
-        self.assertEqual(require_reconciliation_context(approved['source'], None, env), approved)
+        require_reconciliation_context(manifest, manifest['source_branch'], env)
         with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
-            require_reconciliation_context(approved['source'], None, dict(env, CHANGE_ID='174'))
-        with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
-            require_reconciliation_context(approved['source'], '1' * 40, env)
-        with self.assertRaisesRegex(RouteUnavailable, 'unsupported-reconciliation-context'):
-            require_reconciliation_context(approved['source'], None, dict(env, CHANGE_FORK='fork/repo'))
-
-        head = '2' * 40
-        refs = {f'refs/heads/{name}': sha for name, sha in approved['bases'].items()}
-        with patch('jenkins_promotion_route.git', side_effect=[
-                f"{head} {approved['parent']}\n", '\0'.join(approved['guard_files']) + '\0']):
-            require_reconciliation_pins(approved, refs, head)
+            require_reconciliation_context(manifest, manifest['source_branch'],
+                                           dict(env, CHANGE_ID='174'))
+        with self.assertRaisesRegex(RouteUnavailable, 'manifest-signature-invalid'):
+            verify_manifest_signature(dict(manifest, run_id='tampered-after-signing'))
+        with patch('jenkins_promotion_route.OWNER_SSH_PUBLIC_KEY', self.owner_key):
+            verify_manifest_signature(manifest)
+        head = 'a' * 40
+        refs = {f'refs/heads/{name}': sha for name, sha in manifest['bases'].items()}
+        calls = [f"{head} {manifest['parent']}\n", manifest['reviewed_tree'] + '\n',
+                 '\0'.join(manifest['guard_files']) + '\0']
+        with patch('jenkins_promotion_route.git', side_effect=calls):
+            require_reconciliation_pins(manifest, refs, head)
+        # A live-base mismatch is detected before any object is read.
         with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-bases-or-source-parent-moved'):
-            require_reconciliation_pins(approved, dict(refs, **{'refs/heads/main': '3' * 40}), head)
-        with patch('jenkins_promotion_route.git', return_value=f"{head} {'3' * 40}\n"):
-            with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-bases-or-source-parent-moved'):
-                require_reconciliation_pins(approved, refs, head)
+            require_reconciliation_pins(manifest, dict(refs, **{'refs/heads/main': '4' * 40}), head)
+        for replacement, side_effect in (
+                (f"{head} {'3' * 40}\n", [f"{head} {'3' * 40}\n"]),
+                ('d' * 40, [f"{head} {manifest['parent']}\n", 'd' * 40 + '\n'])):
+            with self.subTest(replacement=replacement):
+                with patch('jenkins_promotion_route.git', side_effect=side_effect):
+                    with self.assertRaisesRegex(RouteUnavailable,
+                                                'reconciliation-bases-or-source-parent-moved'):
+                        require_reconciliation_pins(manifest, refs, head)
         with patch('jenkins_promotion_route.git', side_effect=[
-                f"{head} {approved['parent']}\n", 'versions.json\0']):
+                f"{head} {manifest['parent']}\n", manifest['reviewed_tree'] + '\n',
+                'versions.json\0']):
             with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-unreviewed-guard-files'):
-                require_reconciliation_pins(approved, refs, head)
+                require_reconciliation_pins(manifest, refs, head)
+
+    def test_actions_reconciliation_context_is_scoped_to_trusted_event(self):
+        manifest = self.signed_manifest(pr='237', source='fix/staging-draft-app-token-20261126')
+        head = 'a' * 40
+        repo = 'yonrasgg/ragnarsec-hardened-images'
+        require_actions_reconciliation_context(manifest, manifest['source_branch'], head, '237', repo)
+        for change_id, source, reviewed_head, event_repo in (
+                ('238', manifest['source_branch'], head, repo),
+                ('237', 'fix/other', head, repo),
+                ('237', manifest['source_branch'], None, repo),
+                ('237', manifest['source_branch'], 'xyz', repo),
+                ('237', manifest['source_branch'], head, 'attacker/example'),
+                (None, manifest['source_branch'], head, repo)):
+            with self.subTest(change_id=change_id, source=source,
+                              reviewed_head=reviewed_head, repo=event_repo):
+                with self.assertRaisesRegex(RouteUnavailable,
+                                            'unsupported-reconciliation-context'):
+                    require_actions_reconciliation_context(
+                        manifest, source, reviewed_head, change_id, event_repo)
+
+    def test_actions_reconciliation_check_keeps_pins_conflict_and_plan(self):
+        manifest = self.signed_manifest(pr='237', source='fix/staging-draft-app-token-20261126',
+                                        parent='9' * 40, reviewed_head='a' * 40,
+                                        reviewed_tree='c' * 40)
+        head = 'a' * 40
+        reviewed = manifest['reviewed_head']
+        dev = manifest['bases']['development']
+        refs = {f'refs/heads/{name}': sha for name, sha in manifest['bases'].items()}
+        refs['refs/heads/' + manifest['source_branch']] = head
+        direct = {'schema_version': 1, 'result': 'conflict', 'exit_code': 1,
+                  'merge_authorized': False, 'phases': [
+                      {'lane': 'fix-to-development', 'result': 'clean'},
+                      {'lane': 'development-to-staging', 'result': 'conflict',
+                       'conflict_paths': manifest['conflict_paths']}]}
+        planned = {'schema_version': 1, 'result': 'pass', 'exit_code': 0,
+                   'reviewed_tree': manifest['reviewed_tree'], 'merge_authorized': False,
+                   'phases': [
+                       {'lane': 'fix-to-development', 'result': 'clean'},
+                       {'lane': 'development-to-staging-reconciliation', 'result': 'clean'},
+                       {'lane': 'staging-to-main-reconciliation', 'result': 'clean'}],
+                   'requires_verified_reconciliation_prs': True}
+        git_calls = ['', dev + '\n', '', json.dumps(manifest),
+                     f"{reviewed} {manifest['parent']}\n", manifest['reviewed_tree'] + '\n']
+        real_run = subprocess.run
+
+        def fake_run(argv, **kwargs):
+            if argv[0] == 'ssh-keygen':
+                return real_run(argv, **kwargs)
+            if argv[:1] == ['git'] and 'merge-base' in argv:
+                return subprocess.CompletedProcess(argv, 0, '', '')
+            self.assertEqual(argv[0], sys.executable)
+            return subprocess.CompletedProcess(argv, 1, json.dumps(direct), '')
+
+        with patch('jenkins_promotion_route.OWNER_SSH_PUBLIC_KEY', self.owner_key), \
+             patch('jenkins_promotion_route.git', side_effect=git_calls), \
+             patch('jenkins_promotion_route.live', side_effect=[refs, refs, refs]), \
+             patch('jenkins_promotion_route.subprocess.run', side_effect=fake_run), \
+             patch('jenkins_promotion_route.plan_reconciliation',
+                   return_value=planned) as plan:
+            report = check(manifest['source_branch'], head, True, '237',
+                           'yonrasgg/ragnarsec-hardened-images', head, '237')
+        self.assertEqual(report, dict(planned, direct_route=direct, manifest_pr='237',
+                                      manifest_reviewed_head=reviewed, run_id=manifest['run_id']))
+        self.assertEqual(report['result'], 'pass')
+        self.assertFalse(report['merge_authorized'])
+        self.assertEqual([p['lane'] for p in report['phases']],
+                         ['fix-to-development', 'development-to-staging-reconciliation',
+                          'staging-to-main-reconciliation'])
+        plan.assert_called_once_with('.', dict(manifest['bases'], fix_head=reviewed),
+                                     manifest['reviewed_tree'])
+        for change_id, repo in (('238', 'yonrasgg/ragnarsec-hardened-images'),
+                                ('237', None)):
+            with self.subTest(change_id=change_id, repo=repo):
+                with self.assertRaisesRegex(RouteUnavailable,
+                                            'unsupported-reconciliation-context'):
+                    check(manifest['source_branch'], head, True, change_id, repo, head, '237')
+
+    def test_actions_workflow_reads_the_signed_pr_manifest_without_allowlists(self):
+        workflow = (ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
+        for marker in ('--change-id "$PR_NUMBER"', '--repo "$REPO"', '--pr "$PR_NUMBER"',
+                       '--manifest-from-pr "$PR_HEAD_SHA"',
+                       '--allow-manifest-reconciliation'):
+            self.assertIn(marker, workflow)
+        self.assertNotIn('case "$PR_NUMBER:$SOURCE_BRANCH"', workflow)
+        self.assertNotIn('--approved-reconciliation', workflow)
+        run = workflow.rsplit('run: |', 1)[1]
+        self.assertEqual(subprocess.run(['bash', '-n'], input=run,
+                                        capture_output=True, text=True).returncode, 0)
 
     def test_recovery_aliases_are_named_and_frozen_in_jenkins(self):
         pipeline = (ROOT / 'Jenkinsfile').read_text()
@@ -145,7 +280,10 @@ class JenkinsPromotionRoute(unittest.TestCase):
         self.assertIn('ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout', pipeline)
         self.assertIn('e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26', pipeline)
         self.assertIn('f0a1d6f044406d04e0410016985c638b04b4e47f', pipeline)
-        self.assertIn('--approved-reconciliation', pipeline)
+        self.assertIn('--allow-manifest-reconciliation', pipeline)
+        self.assertIn('--pr "$CHANGE_ID"', pipeline)
+        self.assertNotIn('case "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH"', pipeline)
+        self.assertNotIn('--approved-reconciliation', pipeline)
 
     def test_clean_route_binds_exact_live_refs(self):
         self.setup_checkout(conflict=False)
@@ -198,7 +336,8 @@ class JenkinsPromotionRoute(unittest.TestCase):
                        'contents: read', 'ref: ${{ github.event.pull_request.base.sha }}',
                        'persist-credentials: false',
                        '"$BASE_REPO" == "$GITHUB_REPOSITORY"', '"$BASE_BRANCH" == development',
-                       '--reviewed-head "$PR_HEAD_SHA"'):
+                       '--reviewed-head "$PR_HEAD_SHA"', '--manifest-from-pr "$PR_HEAD_SHA"',
+                       '--pr "$PR_NUMBER"', '--allow-manifest-reconciliation'):
             self.assertIn(marker, workflow)
         self.assertNotIn('ref: ${{ github.sha }}', workflow)
         self.assertNotIn('ref: ${{ github.event.pull_request.head.sha }}', workflow)
