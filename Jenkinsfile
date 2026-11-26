@@ -236,6 +236,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-o1-ds007-final-20261125" ]; then
                     require_scoped_sync "$head" staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e \
                       development 5699b18d1a3b599cb27a7783702f0912c4947ffe
+                  elif [ "$source" = "sync/development-to-staging-manifest-aware-20261126" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development 0e2cf0a1121647a50ba8676270ac16231ad5c555
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -268,6 +271,9 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-o1-ds007-final-20261125" ]; then
                     require_scoped_sync "$head" main 6abfb7aed7287c43a920427c170d26b8e4dfe76d \
                       staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e
+                  elif [ "$source" = "sync/staging-to-main-manifest-aware-20261126" ]; then
+                    require_scoped_sync "$head" main 57bec7ffc5aa4baf87dfbf333d3b087c5b2befea \
+                      staging e5b1d84b2c7f8de69016b56a94a2a24116201c71
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
