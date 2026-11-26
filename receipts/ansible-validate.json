@@ -1,0 +1,88 @@
+{
+  "schema": "ragnarsec.validation-receipt/1.0",
+  "run_id": "20261126T052328Z-optionc-syntax-15ab3d14",
+  "target_tree_sha": "<<PLACEHOLDER: reviewed_tree_sha(head_tree_entries)>>",
+  "target_commit_sha": "<<PLACEHOLDER: final PR head SHA — see BLOCKER B>>",
+  "playbook_sha": "c3a2f81f39eb75f4ad29e43b13cb97b4be27db5f1ab8107634df0459236069c4",
+  "inventory_sha": "f2939ab3a79db96dc30fd2e116ac7a426ce315274609b741f1efee034151f1b3",
+  "commands": [
+    {
+      "id": "C1",
+      "argv": [
+        "ansible-playbook",
+        "--version"
+      ],
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14",
+      "rc": 0,
+      "owner_gate": false,
+      "sudo_required": false,
+      "started_at": "<<PLACEHOLDER: C1 started_at (ISO-8601 Z)>>",
+      "finished_at": "<<PLACEHOLDER: C1 finished_at (ISO-8601 Z)>>",
+      "stdout_sha256": "<<PLACEHOLDER: sha256 of command-C1.stdout>>",
+      "stderr_sha256": "<<PLACEHOLDER: sha256 of command-C1.stderr>>"
+    },
+    {
+      "id": "C2",
+      "argv": [
+        "ansible-playbook",
+        "--syntax-check",
+        "-i",
+        "/home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14/sandbox-inventory.template.ini",
+        "/home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14/batch-all-services.yml",
+        "-e",
+        "@/home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14/batch-services-41.yml",
+        "-e",
+        "batch_publish=false"
+      ],
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14",
+      "rc": 0,
+      "owner_gate": false,
+      "sudo_required": false,
+      "started_at": "<<PLACEHOLDER: C2 started_at (ISO-8601 Z)>>",
+      "finished_at": "<<PLACEHOLDER: C2 finished_at (ISO-8601 Z)>>",
+      "stdout_sha256": "<<PLACEHOLDER: sha256 of command-C2.stdout>>",
+      "stderr_sha256": "<<PLACEHOLDER: sha256 of command-C2.stderr>>"
+    }
+  ],
+  "outputs_sha256": "<<PLACEHOLDER: sha256 of canonical capture summary>>",
+  "ansible_version": "<<PLACEHOLDER: verbatim command-C1.stdout bytes>>",
+  "ansible_version_sha256": "<<PLACEHOLDER: sha256 of verbatim version bytes>>",
+  "host_id": "heimdall",
+  "actor": "userone",
+  "sudo_required": false,
+  "observed_at": "<<PLACEHOLDER: observed_at (ISO-8601 Z)>>",
+  "result": "pass",
+  "validation_profile": "syntax-v1",
+  "tree_assertion": {
+    "method": "github-api-tree-assertion",
+    "observed": "<<PLACEHOLDER: reviewed_tree_sha(head_tree_entries)>>",
+    "expected": "<<PLACEHOLDER: reviewed_tree_sha(head_tree_entries)>>",
+    "match": true,
+    "source_ref": "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/tree-assertion.json"
+  },
+  "owner_gates": [],
+  "evidence_refs": [
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/receipt.json",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/SHA256SUMS",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/capture-contract.txt",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C1.stdout",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C1.stderr",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C2.stdout",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C2.stderr",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/run-timeline.tsv",
+    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/SHA256SUMS.captures"
+  ],
+  "signer": {
+    "key_id": "heimdall-userone-pilot-ed25519",
+    "identity": "heimdall:userone",
+    "mechanism": "ed25519",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiv/sPquJD3nPifYbSsKvzBvT0fiH0SdCtJ0Qm0S3n6 ragnarsec-receipt-signer@heimdall\n"
+  },
+  "signature": "<<OWNER_SIGNATURE_PLACEHOLDER — sign on heimdall, never fabricate>>",
+  "chain": {
+    "seq": 1,
+    "prev_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "supersedes": null,
+  "draft_marker": "DRAFT — UNSIGNED — capture-derived fields are placeholders; DO NOT VERIFY OR PUBLISH"
+}
