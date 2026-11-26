@@ -148,6 +148,18 @@ RECONCILIATIONS = {
         'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
                       'tools/jenkins_promotion_route.py'],
     },
+    '236': {
+        'source': 'fix/ansible-check-publisher-20261126',
+        'parent': 'b56c27b8c55676b572bdeacf36fb62d9a0267a50',
+        'bases': {
+            'development': '91dd913821fa6e4a77f475759f1d2a50681293f6',
+            'staging': 'e5b1d84b2c7f8de69016b56a94a2a24116201c71',
+            'main': '57bec7ffc5aa4baf87dfbf333d3b087c5b2befea',
+        },
+        'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
+                      'tests/test_public_prepare_staging_draft.py',
+                      'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
