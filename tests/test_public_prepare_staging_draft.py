@@ -13,7 +13,7 @@ from prepare_staging_draft import (
 class StagingDraftTests(unittest.TestCase):
     def setUp(self):
         self.fix, self.prior, self.dev, self.staging, self.tree = [c * 40 for c in 'abcde']
-        self.name, self.app = 'ansible/validate', 1234
+        self.name, self.app = 'ansible/validate', 5929884
         self.repo = dict(id=REPO_ID, full_name=REPO)
         self.checks = f'commits/{self.fix}/check-runs?' + urlencode(
             dict(check_name=self.name, filter='latest', per_page=100))
@@ -74,6 +74,18 @@ class StagingDraftTests(unittest.TestCase):
         gate = self.data['rules/branches/development'][0]['parameters']['required_status_checks'][0]
         gate['context'] = 'continuous-integration/jenkins/pr-head'
         with self.assertRaisesRegex(Hold, 'ansible-not-required-by-github'):
+            self.plan()
+
+    def test_required_check_with_another_app_id_is_rejected(self):
+        gate = self.data['rules/branches/development'][0]['parameters']['required_status_checks'][0]
+        gate['integration_id'] = self.app + 1
+        with self.assertRaisesRegex(Hold, 'ansible-not-required-by-github'):
+            self.plan()
+
+    def test_check_run_with_wrong_summary_is_rejected(self):
+        check = self.data[self.checks]['check_runs'][0]
+        check['output']['summary'] = f'pr=17;base={self.prior};head={"2" * 40}'
+        with self.assertRaisesRegex(Hold, 'ansible-check-not-bound-to-the-integrated-fix'):
             self.plan()
 
     def test_failed_returns_to_new_fix_and_pending_does_not(self):
