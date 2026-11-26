@@ -1,8 +1,8 @@
 {
   "schema": "ragnarsec.validation-receipt/1.0",
   "run_id": "20261126T052328Z-optionc-syntax-15ab3d14",
-  "target_tree_sha": "09b61337e853cf342f34d738fce4fef77df7c328",
-  "target_commit_sha": "2e577327f898ede77ff1659c88d4088376078f2d",
+  "target_tree_sha": "284c72bb5cb133c2303a96d5a27d759226675faa",
+  "target_commit_sha": "4006d5f78b517b836f555cad9befab525a6f6207",
   "playbook_sha": "c3a2f81f39eb75f4ad29e43b13cb97b4be27db5f1ab8107634df0459236069c4",
   "inventory_sha": "f2939ab3a79db96dc30fd2e116ac7a426ce315274609b741f1efee034151f1b3",
   "commands": [
@@ -12,12 +12,12 @@
         "ansible-playbook",
         "--version"
       ],
-      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14",
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261126T181225Z-optionc-syntax-rerun-6174d64",
       "rc": 0,
       "owner_gate": false,
       "sudo_required": false,
-      "started_at": "2026-11-26T05:23:28Z",
-      "finished_at": "2026-11-26T05:23:28Z",
+      "started_at": "2026-11-26T18:12:25Z",
+      "finished_at": "2026-11-26T18:12:25Z",
       "stdout_sha256": "3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
@@ -34,12 +34,12 @@
         "-e",
         "batch_publish=false"
       ],
-      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14",
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261126T181225Z-optionc-syntax-rerun-6174d64",
       "rc": 0,
       "owner_gate": false,
       "sudo_required": false,
-      "started_at": "2026-11-26T05:23:28Z",
-      "finished_at": "2026-11-26T05:23:28Z",
+      "started_at": "2026-11-26T18:12:25Z",
+      "finished_at": "2026-11-26T18:12:26Z",
       "stdout_sha256": "d6190a6dc4d705288165cdcaa8c6f48483afc96d332b2ecb732a016d9ae72063",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
@@ -50,27 +50,28 @@
   "host_id": "heimdall",
   "actor": "userone",
   "sudo_required": false,
-  "observed_at": "2026-11-26T05:23:28Z",
+  "observed_at": "2026-11-26T18:12:26Z",
   "result": "pass",
   "validation_profile": "syntax-v1",
   "tree_assertion": {
     "method": "github-api-tree-assertion",
-    "observed": "09b61337e853cf342f34d738fce4fef77df7c328",
-    "expected": "09b61337e853cf342f34d738fce4fef77df7c328",
+    "observed": "284c72bb5cb133c2303a96d5a27d759226675faa",
+    "expected": "284c72bb5cb133c2303a96d5a27d759226675faa",
     "match": true,
     "source_ref": "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/tree-assertion.json"
   },
   "owner_gates": [],
   "evidence_refs": [
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/receipt.json",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/SHA256SUMS",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/capture-contract.txt",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C1.stdout",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C1.stderr",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C2.stdout",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/command-C2.stderr",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/run-timeline.tsv",
-    "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/SHA256SUMS.captures"
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/receipt.json",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/SHA256SUMS",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/capture-contract.txt",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/command-C1.stdout",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/command-C1.stderr",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/command-C2.stdout",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/command-C2.stderr",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/run-timeline.tsv",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/SHA256SUMS.captures",
+    "40-Evidence/Audits/change-validation/heimdall/captures-20261126T181225Z/heimdall-stage-path.txt"
   ],
   "signer": {
     "key_id": "heimdall-userone-pilot-ed25519",
@@ -78,7 +79,7 @@
     "mechanism": "ed25519",
     "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiv/sPquJD3nPifYbSsKvzBvT0fiH0SdCtJ0Qm0S3n6 ragnarsec-receipt-signer@heimdall\n"
   },
-  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABAMWrXivOzYCx7pJwh07hm1N1B1pM/ByXdePU0B//PQf\nqaZ+qlCHYJ8hC7rsBRgIsLEV/j2KEuZfbDNkpB64UBBg==\n-----END SSH SIGNATURE-----\n",
+  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABAKPf4yxqq8+fkkU4JhYuCDruAWBvGdaKtBj3MZALygw\nqH+bHEh+zYt6w1Jn0ZUFvjBkTfwzjI4CkXlkFCshEbBw==\n-----END SSH SIGNATURE-----\n",
   "chain": {
     "seq": 1,
     "prev_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000"

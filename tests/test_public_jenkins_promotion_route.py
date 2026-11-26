@@ -332,16 +332,18 @@ class JenkinsPromotionRoute(unittest.TestCase):
 
     def test_actions_has_read_only_automatic_triggers_and_base_checkout(self):
         workflow = (ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
-        for marker in ('pull_request_target:', 'synchronize', 'ready_for_review',
+        for marker in ('pull_request:', 'synchronize', 'ready_for_review',
                        'contents: read', 'ref: ${{ github.event.pull_request.base.sha }}',
                        'persist-credentials: false',
                        '"$BASE_REPO" == "$GITHUB_REPOSITORY"', '"$BASE_BRANCH" == development',
                        '--reviewed-head "$PR_HEAD_SHA"', '--manifest-from-pr "$PR_HEAD_SHA"',
                        '--pr "$PR_NUMBER"', '--allow-manifest-reconciliation'):
             self.assertIn(marker, workflow)
+        self.assertNotIn('pull_request_target', workflow)
         self.assertNotIn('ref: ${{ github.sha }}', workflow)
         self.assertNotIn('ref: ${{ github.event.pull_request.head.sha }}', workflow)
         self.assertNotIn('contents: write', workflow)
+        self.assertNotIn('secrets.', workflow)
         self.assertNotIn('self-hosted', workflow)
 
 

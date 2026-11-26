@@ -207,11 +207,26 @@ def run():
         require(os.environ.get('GITHUB_REPOSITORY') == REPO, 'wrong-workflow-repository')
         event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_bytes())
         kind = os.environ.get('GITHUB_EVENT_NAME')
-        if kind == 'pull_request_target':
-            require(event.get('action') == 'closed' and event['pull_request'].get('merged') is True,
+        if kind == 'workflow_run':
+            # CI-004 corrective: the privileged draft job runs on `workflow_run`
+            # from the protected default branch. The PR number is supplied ONLY
+            # by the trusted resolver in that workflow (INTEGRATED_PR); none of
+            # the untrusted triggering run's outputs are consumed here.
+            # plan_draft() below re-validates the entire PR through the
+            # read-only API before any draft is planned or created.
+            wr = event.get('workflow_run') or {}
+            require(wr.get('event') == 'pull_request'
+                    and (wr.get('head_repository') or {}).get('id') == REPO_ID,
                     'ignored-event')
-            number = event.get('number')
+            value = os.environ.get('INTEGRATED_PR', '')
+            require(isinstance(value, str) and re.fullmatch(r'[1-9][0-9]{0,9}', value),
+                    'invalid-pr-number')
+            number = int(value)
         else:
+            # Owner-triggered path, retained unchanged. The dormant
+            # pull_request_target branch was REMOVED: no workflow in this
+            # repository uses it after CI-004 and it must never be re-enabled
+            # for a credential-minting job.
             require(kind == 'workflow_dispatch' and os.environ.get('GITHUB_REF') == 'refs/heads/main',
                     'ignored-event')
             value = event.get('inputs', {}).get('integrated_pr', '')
