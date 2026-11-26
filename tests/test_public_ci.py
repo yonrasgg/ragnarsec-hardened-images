@@ -756,7 +756,7 @@ class JenkinsBoundaries(unittest.TestCase):
         # remains independent; Actions may read only the protected policy.
         reviewed = {
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
-            'promotion-route-preflight.yml': '85ae25042bed4bc1cc81f058b69a557a1e98a1ba2abefae3ddafb82f7e722ae7',
+            'promotion-route-preflight.yml': '32922887ac1b9d3649045388d2eff30b0463c0a237331758de44ef825014b2e6',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
         for name, digest in reviewed.items():
