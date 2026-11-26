@@ -1,8 +1,8 @@
 {
   "schema": "ragnarsec.validation-receipt/1.0",
   "run_id": "20261126T052328Z-optionc-syntax-15ab3d14",
-  "target_tree_sha": "<<PLACEHOLDER: reviewed_tree_sha(head_tree_entries)>>",
-  "target_commit_sha": "<<PLACEHOLDER: final PR head SHA — see BLOCKER B>>",
+  "target_tree_sha": "34a07295d16319b87855c8a61aff1a4a964d9e7e",
+  "target_commit_sha": "b8f264a101bb4b5d8ba45deaa29b6e05ae7d12b0",
   "playbook_sha": "c3a2f81f39eb75f4ad29e43b13cb97b4be27db5f1ab8107634df0459236069c4",
   "inventory_sha": "f2939ab3a79db96dc30fd2e116ac7a426ce315274609b741f1efee034151f1b3",
   "commands": [
@@ -16,10 +16,10 @@
       "rc": 0,
       "owner_gate": false,
       "sudo_required": false,
-      "started_at": "<<PLACEHOLDER: C1 started_at (ISO-8601 Z)>>",
-      "finished_at": "<<PLACEHOLDER: C1 finished_at (ISO-8601 Z)>>",
-      "stdout_sha256": "<<PLACEHOLDER: sha256 of command-C1.stdout>>",
-      "stderr_sha256": "<<PLACEHOLDER: sha256 of command-C1.stderr>>"
+      "started_at": "2026-11-26T05:23:28Z",
+      "finished_at": "2026-11-26T05:23:28Z",
+      "stdout_sha256": "3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "id": "C2",
@@ -38,25 +38,25 @@
       "rc": 0,
       "owner_gate": false,
       "sudo_required": false,
-      "started_at": "<<PLACEHOLDER: C2 started_at (ISO-8601 Z)>>",
-      "finished_at": "<<PLACEHOLDER: C2 finished_at (ISO-8601 Z)>>",
-      "stdout_sha256": "<<PLACEHOLDER: sha256 of command-C2.stdout>>",
-      "stderr_sha256": "<<PLACEHOLDER: sha256 of command-C2.stderr>>"
+      "started_at": "2026-11-26T05:23:28Z",
+      "finished_at": "2026-11-26T05:23:28Z",
+      "stdout_sha256": "d6190a6dc4d705288165cdcaa8c6f48483afc96d332b2ecb732a016d9ae72063",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
-  "outputs_sha256": "<<PLACEHOLDER: sha256 of canonical capture summary>>",
-  "ansible_version": "<<PLACEHOLDER: verbatim command-C1.stdout bytes>>",
-  "ansible_version_sha256": "<<PLACEHOLDER: sha256 of verbatim version bytes>>",
+  "outputs_sha256": "70cf4bcb549b7febd98b3b32902a2dc2ed39ac5e3bc9b85e797266772501bf98",
+  "ansible_version": "ansible-playbook [core 2.19.11]\n  config file = None\n  configured module search path = ['/home/userone/.ansible/plugins/modules', '/usr/share/ansible/plugins/modules']\n  ansible python module location = /usr/lib/python3/dist-packages/ansible\n  ansible collection location = /home/userone/.ansible/collections:/usr/share/ansible/collections\n  executable location = /usr/bin/ansible-playbook\n  python version = 3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0] (/usr/bin/python3)\n  jinja version = 3.1.6\n  pyyaml version = 6.0.2 (with libyaml v0.2.5)\n",
+  "ansible_version_sha256": "3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c",
   "host_id": "heimdall",
   "actor": "userone",
   "sudo_required": false,
-  "observed_at": "<<PLACEHOLDER: observed_at (ISO-8601 Z)>>",
+  "observed_at": "2026-11-26T05:23:28Z",
   "result": "pass",
   "validation_profile": "syntax-v1",
   "tree_assertion": {
     "method": "github-api-tree-assertion",
-    "observed": "<<PLACEHOLDER: reviewed_tree_sha(head_tree_entries)>>",
-    "expected": "<<PLACEHOLDER: reviewed_tree_sha(head_tree_entries)>>",
+    "observed": "34a07295d16319b87855c8a61aff1a4a964d9e7e",
+    "expected": "34a07295d16319b87855c8a61aff1a4a964d9e7e",
     "match": true,
     "source_ref": "40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/tree-assertion.json"
   },
@@ -78,11 +78,10 @@
     "mechanism": "ed25519",
     "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiv/sPquJD3nPifYbSsKvzBvT0fiH0SdCtJ0Qm0S3n6 ragnarsec-receipt-signer@heimdall\n"
   },
-  "signature": "<<OWNER_SIGNATURE_PLACEHOLDER — sign on heimdall, never fabricate>>",
+  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABA/Z7stZYfDdUzwjrZ8QndRLwpL1Te3lBNzlpAYJtaYl\nI7usY4XVUjorQIPUyTEjGKpiwzM5FsBQZiOLQmdnBvBQ==\n-----END SSH SIGNATURE-----\n",
   "chain": {
     "seq": 1,
     "prev_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
   },
-  "supersedes": null,
-  "draft_marker": "DRAFT — UNSIGNED — capture-derived fields are placeholders; DO NOT VERIFY OR PUBLISH"
+  "supersedes": null
 }
