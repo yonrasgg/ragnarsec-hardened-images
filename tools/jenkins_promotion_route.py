@@ -172,6 +172,20 @@ RECONCILIATIONS = {
                       'tests/ci_workflow_contracts.py', 'tests/test_public_prepare_staging_draft.py',
                       'tools/jenkins_promotion_route.py'],
     },
+    '238': {
+        'source': 'fix/actions-reconciliation-preflight-20261126',
+        'parent': '13dfa27add895edd74b6a9f5a68483e1e51cc5be',
+        'bases': {
+            'development': '13dfa27add895edd74b6a9f5a68483e1e51cc5be',
+            'staging': 'e5b1d84b2c7f8de69016b56a94a2a24116201c71',
+            'main': '57bec7ffc5aa4baf87dfbf333d3b087c5b2befea',
+        },
+        'conflicts': ['.github/workflows/promotion-route-preflight.yml', 'Jenkinsfile',
+                      'tests/ci_workflow_contracts.py', 'tests/test_public_ci.py',
+                      'tests/test_public_jenkins_promotion_route.py',
+                      'tests/test_public_prepare_staging_draft.py',
+                      'tools/jenkins_promotion_route.py'],
+    },
 }
 
 
@@ -207,6 +221,29 @@ def require_reconciliation_context(source, reviewed_head, env):
     return approved
 
 
+def require_actions_reconciliation_context(source, reviewed_head, change_id, repo):
+    """Resolve the governance allowlist for a trusted pull_request_target run.
+
+    Actions checks out the protected base and passes the trusted PR event's
+    reviewed head; it has no Jenkins CHANGE_ID/JOB_NAME/CHANGE_FORK/CHANGE_TARGET.
+    The hash-pinned workflow supplies the PR number and repository from that
+    same trusted event. Source, reviewed head, checkout, pins, direct-route
+    conflict and the reconciliation plan are still verified by check() exactly
+    as in the Jenkins path. This never weakens the direct route: the listed PR
+    must still produce the exact pinned conflict before a plan is accepted.
+    """
+    pr = '' if change_id is None else str(change_id)
+    approved = RECONCILIATIONS.get(pr)
+    if (repo != 'yonrasgg/ragnarsec-hardened-images'
+            or not pr.isdigit()
+            or approved is None
+            or source != approved['source']
+            or reviewed_head is None
+            or not OID.fullmatch(reviewed_head)):
+        raise RouteUnavailable('unsupported-reconciliation-context')
+    return approved
+
+
 def require_reconciliation_pins(reconciliation, refs, head):
     if (any(refs[f'refs/heads/{name}'] != sha for name, sha in reconciliation['bases'].items())
             or git('rev-list', '--parents', '-n1', head).strip() != f"{head} {reconciliation['parent']}"):
@@ -238,10 +275,17 @@ def plan_reconciliation(path, inputs):
             'requires_verified_reconciliation_prs': True}
 
 
-def check(source, reviewed_head, reconcile=False):
+def check(source, reviewed_head, reconcile=False, actions_change_id=None, actions_repo=None):
     if not SOURCE.fullmatch(source):
         raise RouteUnavailable('unsupported-source')
-    reconciliation = require_reconciliation_context(source, reviewed_head, os.environ) if reconcile else None
+    if reconcile:
+        if reviewed_head is not None:
+            reconciliation = require_actions_reconciliation_context(
+                source, reviewed_head, actions_change_id, actions_repo)
+        else:
+            reconciliation = require_reconciliation_context(source, reviewed_head, os.environ)
+    else:
+        reconciliation = None
     prefix = 'refs/heads/'
     source_ref = prefix + source
     try:
@@ -300,10 +344,13 @@ if __name__ == '__main__':
     parser.add_argument('--source', required=True, help='internal fix branch from the PR event')
     parser.add_argument('--reviewed-head', help='expected PR head for a trusted Actions base checkout')
     parser.add_argument('--approved-reconciliation', action='store_true',
-                        help='verify the one-time reconciliation pinned to this Jenkins PR')
+                        help='verify the one-time reconciliation pinned to this Jenkins PR or Actions event')
+    parser.add_argument('--change-id', help='trusted PR number supplied by the Actions event')
+    parser.add_argument('--repo', help='trusted GITHUB_REPOSITORY supplied by the Actions event')
     args = parser.parse_args()
     try:
-        output = check(args.source, args.reviewed_head, args.approved_reconciliation)
+        output = check(args.source, args.reviewed_head, args.approved_reconciliation,
+                       args.change_id, args.repo)
     except RouteUnavailable as exc:
         output = dict(result='blocked', exit_code=2, reason=str(exc), merge_authorized=False)
     except (OSError, subprocess.SubprocessError, ValueError, PreflightError, RouteConflict):

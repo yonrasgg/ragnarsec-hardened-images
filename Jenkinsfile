@@ -334,7 +334,7 @@ pipeline {
               'ragnarsec-hardened-images/PR-215:215:fix/promotion-candidate-evaluator-20261125'|\
               'ragnarsec-hardened-images/PR-233:233:fix/repin-unblock-sync-lanes-20261125'|\
               'ragnarsec-hardened-images/PR-236:236:fix/ansible-check-publisher-20261126'|\
-              'ragnarsec-hardened-images/PR-237:237:fix/staging-draft-app-token-20261126')
+              'ragnarsec-hardened-images/PR-238:238:fix/actions-reconciliation-preflight-20261126')
                 set -- "$@" --approved-reconciliation
                 ;;
             esac

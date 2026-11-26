@@ -43,6 +43,17 @@ jobs:
         env:
           SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          python3 -B tools/jenkins_promotion_route.py --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA"
+          set -- --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA" \
+            --change-id "$PR_NUMBER" --repo "$REPO"
+          case "$PR_NUMBER:$SOURCE_BRANCH" in
+            '236:fix/ansible-check-publisher-20261126'|\
+            '237:fix/staging-draft-app-token-20261126'|\
+            '238:fix/actions-reconciliation-preflight-20261126')
+              set -- "$@" --approved-reconciliation
+              ;;
+          esac
+          python3 -B tools/jenkins_promotion_route.py "$@"

@@ -15,7 +15,9 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from jenkins_promotion_route import (
     RECONCILIATIONS,
     RouteUnavailable,
+    check,
     plan_reconciliation,
+    require_actions_reconciliation_context,
     require_reconciliation_context,
     require_reconciliation_pins,
 )
@@ -135,6 +137,90 @@ class JenkinsPromotionRoute(unittest.TestCase):
                 f"{head} {approved['parent']}\n", 'versions.json\0']):
             with self.assertRaisesRegex(RouteUnavailable, 'reconciliation-unreviewed-guard-files'):
                 require_reconciliation_pins(approved, refs, head)
+
+    def test_actions_reconciliation_context_is_scoped_to_trusted_event(self):
+        approved = RECONCILIATIONS['237']
+        head = 'a' * 40
+        repo = 'yonrasgg/ragnarsec-hardened-images'
+        self.assertEqual(
+            require_actions_reconciliation_context(approved['source'], head, '237', repo), approved)
+        for change_id, source, reviewed_head, event_repo in (
+                ('238', approved['source'], head, repo),
+                ('237', 'fix/other', head, repo),
+                ('237', approved['source'], None, repo),
+                ('237', approved['source'], 'xyz', repo),
+                ('237', approved['source'], head, 'attacker/example'),
+                (None, approved['source'], head, repo)):
+            with self.subTest(change_id=change_id, source=source,
+                              reviewed_head=reviewed_head, repo=event_repo):
+                with self.assertRaisesRegex(RouteUnavailable,
+                                            'unsupported-reconciliation-context'):
+                    require_actions_reconciliation_context(
+                        source, reviewed_head, change_id, event_repo)
+
+    def test_actions_reconciliation_check_keeps_pins_conflict_and_plan(self):
+        approved = RECONCILIATIONS['237']
+        head = 'a' * 40
+        dev = approved['bases']['development']
+        refs = {f'refs/heads/{name}': sha for name, sha in approved['bases'].items()}
+        refs['refs/heads/' + approved['source']] = head
+        direct = {'schema_version': 1, 'result': 'conflict', 'exit_code': 1,
+                  'merge_authorized': False, 'phases': [
+                      {'lane': 'fix-to-development', 'result': 'clean'},
+                      {'lane': 'development-to-staging', 'result': 'conflict',
+                       'conflict_paths': approved['conflicts']}]}
+        planned = {'schema_version': 1, 'result': 'pass', 'exit_code': 0,
+                   'merge_authorized': False, 'phases': [
+                       {'lane': 'fix-to-development', 'result': 'clean'},
+                       {'lane': 'development-to-staging-reconciliation', 'result': 'clean'},
+                       {'lane': 'staging-to-main-reconciliation', 'result': 'clean'}],
+                   'requires_verified_reconciliation_prs': True}
+
+        def fake_git(*args):
+            if args[:2] == ('rev-parse', '--verify'):
+                return dev + '\n'
+            if args[:3] == ('rev-list', '--parents', '-n1'):
+                return f"{head} {approved['parent']}\n"
+            if args[:3] == ('diff', '--name-only', '-z'):
+                return '\0'.join(approved['guard_files']) + '\0'
+            return ''
+
+        def fake_run(argv, **kwargs):
+            self.assertEqual(argv[0], sys.executable)
+            return subprocess.CompletedProcess(argv, 1, json.dumps(direct), '')
+
+        with patch('jenkins_promotion_route.git', side_effect=fake_git), \
+             patch('jenkins_promotion_route.live', side_effect=[refs, refs, refs]), \
+             patch('jenkins_promotion_route.subprocess.run', side_effect=fake_run), \
+             patch('jenkins_promotion_route.plan_reconciliation',
+                   return_value=planned) as plan:
+            report = check(approved['source'], head, True, '237',
+                           'yonrasgg/ragnarsec-hardened-images')
+        self.assertEqual(report, dict(planned, direct_route=direct))
+        self.assertEqual(report['result'], 'pass')
+        self.assertFalse(report['merge_authorized'])
+        self.assertEqual([p['lane'] for p in report['phases']],
+                         ['fix-to-development', 'development-to-staging-reconciliation',
+                          'staging-to-main-reconciliation'])
+        plan.assert_called_once_with('.', dict(approved['bases'], fix_head=head))
+        for change_id, repo in (('238', 'yonrasgg/ragnarsec-hardened-images'),
+                                ('237', None)):
+            with self.subTest(change_id=change_id, repo=repo):
+                with self.assertRaisesRegex(RouteUnavailable,
+                                            'unsupported-reconciliation-context'):
+                    check(approved['source'], head, True, change_id, repo)
+
+    def test_actions_workflow_guards_reconciliation_to_listed_prs(self):
+        workflow = (ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
+        for marker in ('--change-id "$PR_NUMBER"', '--repo "$REPO"',
+                       "'236:fix/ansible-check-publisher-20261126'",
+                       "'237:fix/staging-draft-app-token-20261126'",
+                       "'238:fix/actions-reconciliation-preflight-20261126'",
+                       'set -- "$@" --approved-reconciliation'):
+            self.assertIn(marker, workflow)
+        run = workflow.rsplit('run: |', 1)[1]
+        self.assertEqual(subprocess.run(['bash', '-n'], input=run,
+                                        capture_output=True, text=True).returncode, 0)
 
     def test_recovery_aliases_are_named_and_frozen_in_jenkins(self):
         pipeline = (ROOT / 'Jenkinsfile').read_text()
