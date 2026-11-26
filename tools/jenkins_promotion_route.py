@@ -1,4 +1,12 @@
-"""Run the squash simulation on live refs without checking out candidate code."""
+"""Run the squash simulation on live refs without checking out candidate code.
+
+Reconciliation admission data is supplied as an owner-signed manifest committed
+inside the PR branch. The tool (running from the trusted protected base) reads the
+manifest from the fetched PR object, verifies the detached SSH signature against
+a key pinned here, and re-verifies every field against live refs before and after
+the simulation. There is no per-PR allowlist in this file. Missing, unsigned or
+mismatched manifests fail closed; nothing here authorizes a merge or a publish.
+"""
 import argparse
 import json
 import os
@@ -6,149 +14,32 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 from promotion_route import OID, PreflightError, Repository, RouteConflict
 
 
 SOURCE = re.compile(r'fix/[a-zA-Z0-9][a-zA-Z0-9._-]*')
 ROUTE = Path(__file__).resolve().with_name('promotion_route.py')
-RECONCILIATIONS = {
-    '207': {
-        'source': 'fix/scanopy-sync-lanes-20261125',
-        'parent': 'b643d9a17c0a4482b145b5f0093cc05fe259e534',
-        'bases': {
-            'development': 'b7b53157573b0325b6c544122f1a6ac22b0903fb',
-            'staging': 'f8035cd71e576c9ea469a554dac0df1f07e2ba29',
-            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
-        },
-        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py',
-                      'vex/exceptions.json', 'wgdashboard/Dockerfile'],
-    },
-    '204': {
-        'source': 'fix/scanopy-image-catalog-20261125',
-        'parent': '885a8e1a50d193e78215293e76d8da16f0e91933',
-        'bases': {
-            'development': '202fe44089ab8b3287d733817fd75c334c185a69',
-            'staging': 'f8035cd71e576c9ea469a554dac0df1f07e2ba29',
-            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
-        },
-        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py', 'vex/exceptions.json'],
-    },
-    '164': {
-        'source': 'fix/automated-promotion-preflight',
-        'parent': '1ba8a2ae90dc778ff0483535f9a31f8ba4d6f464',
-        'bases': {
-            'development': '40c82e789bad5895b730a92ffba2ee8838aeaf4a',
-            'staging': 'e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26',
-            'main': 'f0a1d6f044406d04e0410016985c638b04b4e47f',
-        },
-        'conflicts': ['tests/test_public_ci.py'],
-    },
-    '173': {
-        'source': 'fix/actions-promotion-base-checkout',
-        'parent': '35167da5701ed431fe6a67eb776c5844ea1c0143',
-        'bases': {
-            'development': 'f94d751309a08107529b0fa3584ef41aac06d700',
-            'staging': 'dbf31c83b18b66b5f6b2aa14516fed4c8b01b604',
-            'main': '07806bb98d24774074713f241f2922d2edc90487',
-        },
-        'conflicts': [
-            '.github/workflows/promotion-route-preflight.yml',
-            'Jenkinsfile',
-            'tests/test_public_ci.py',
-            'tests/test_public_jenkins_promotion_route.py',
-            'tools/jenkins_promotion_route.py',
-        ],
-        'guard_files': ['Jenkinsfile', 'tests/test_public_jenkins_promotion_route.py',
-                        'tools/jenkins_promotion_route.py'],
-    },
-    '203': {
-        'source': 'fix/wgdashboard-o1-native-https',
-        'parent': 'f8bd2b94f0c7e1b8c5f24d3548aa16bf9c50edeb',
-        'bases': {
-            'development': 'f8bd2b94f0c7e1b8c5f24d3548aa16bf9c50edeb',
-            'staging': 'f8035cd71e576c9ea469a554dac0df1f07e2ba29',
-            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
-        },
-        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py',
-                      'vex/exceptions.json', 'wgdashboard/Dockerfile'],
-    },
-    '210': {
-        'source': 'fix/wgdashboard-o1-ds007',
-        'parent': '4452ffa78c53f6fe54fd92b2b4d45d2a6027bdca',
-        'bases': {
-            'development': '4452ffa78c53f6fe54fd92b2b4d45d2a6027bdca',
-            'staging': 'f8035cd71e576c9ea469a554dac0df1f07e2ba29',
-            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
-        },
-        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py',
-                      'vex/exceptions.json', 'wgdashboard/Dockerfile'],
-    },
-    '214': {
-        'source': 'fix/o1-ds007-promotion-lanes-20261125',
-        'parent': '8cc8afd1c6b89c4b3ee50a26a12602ead05cdc8d',
-        'bases': {
-            'development': '8cc8afd1c6b89c4b3ee50a26a12602ead05cdc8d',
-            'staging': 'd3af4e2d79a3796c73d7bef5f0c0ad9717c1304d',
-            'main': '84d70416ea3038f23d36bd5187af5f3b324c505b',
-        },
-        'conflicts': ['Jenkinsfile', 'tests/test_public_wgdashboard_native_tls.py',
-                      'tools/jenkins_promotion_route.py', 'wgdashboard/Dockerfile',
-                      'wgdashboard/docker/entrypoint.sh'],
-    },
-    '219': {
-        'source': 'fix/o1-ds007-main-lane-repin-20261125',
-        'parent': '03c1b0ef65a579d4919afb9815b8380927c3cce0',
-        'bases': {
-            'development': '03c1b0ef65a579d4919afb9815b8380927c3cce0',
-            'staging': '57e7be072141065ba1a15495b74751b6ccf91ba8',
-            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
-        },
-        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
-    },
-    '222': {
-        'source': 'fix/o1-ds007-staging-lane-repin-20261125',
-        'parent': '5a24bca7083a9dce763b41ea5eabdb155529d71e',
-        'bases': {
-            'development': '5a24bca7083a9dce763b41ea5eabdb155529d71e',
-            'staging': '57e7be072141065ba1a15495b74751b6ccf91ba8',
-            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
-        },
-        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
-    },
-    '224': {
-        'source': 'fix/o1-ds007-lane-pins-final-20261125',
-        'parent': 'fbc5b422f439ac1e134a1a31d3fd9c46411beebb',
-        'bases': {
-            'development': 'fbc5b422f439ac1e134a1a31d3fd9c46411beebb',
-            'staging': 'e1714fa47e00163ad8e66daeba284443443e483c',
-            'main': 'f19dd8243c373ae954a3b8c2b635ace11d3b335e',
-        },
-        'conflicts': ['Jenkinsfile', 'tools/jenkins_promotion_route.py'],
-    },
-    '215': {
-        'source': 'fix/promotion-candidate-evaluator-20261125',
-        'parent': 'ff690e27c3038d295c19b5045992ef7c924f207e',
-        'bases': {
-            'development': '15d2f3d3760a5600c2dd09849dcbf522f536d330',
-            'staging': '6421e1b72b11dabe68c0bd3759885989fe81ee8e',
-            'main': '6abfb7aed7287c43a920427c170d26b8e4dfe76d',
-        },
-        'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
-                      'tools/jenkins_promotion_route.py'],
-    },
-    '233': {
-        'source': 'fix/repin-unblock-sync-lanes-20261125',
-        'parent': 'c9eb415a242e75adf15848df0ad4c0cd7c0fa2b7',
-        'bases': {
-            'development': '5699b18d1a3b599cb27a7783702f0912c4947ffe',
-            'staging': '6421e1b72b11dabe68c0bd3759885989fe81ee8e',
-            'main': '6abfb7aed7287c43a920427c170d26b8e4dfe76d',
-        },
-        'conflicts': ['Jenkinsfile', 'tests/ci_workflow_contracts.py',
-                      'tools/jenkins_promotion_route.py'],
-    },
-}
+MANIFEST_DIR = 'reconciliation'
+MANIFEST_NAME = 'PR-{pr}.json'
+MANIFEST_SCHEMA = 1
+SIGN_NAMESPACE = 'ragnarsec-promotion-reconciliation-v1'
+SIGN_IDENTITY = 'ragnarsec-owner'
+BRANCHES = ('development', 'staging', 'main')
+
+# Full owner key pinned in protected policy. Never taken from the PR.
+OWNER_SSH_PUBLIC_KEY = (
+    'ssh-ed25519 '
+    'AAAAC3NzaC1lZDI1NTE5AAAAIMeuFvoc8mL6ud8EkvgMdTy9wT2MggRpklzA9ALVkIER '
+    'ragnarsec-git-signing'
+)
+
+# Every canonical field is covered by the detached signature. guard_files is
+# optional and, when present, is signed and re-checked as in the original gate.
+MANIFEST_FIELDS = ('schema_version', 'pr', 'source_branch', 'parent',
+                   'reviewed_head', 'reviewed_tree', 'bases', 'conflict_paths', 'run_id')
+OPTIONAL_MANIFEST_FIELDS = ('guard_files',)
 
 
 class RouteUnavailable(Exception):
@@ -172,29 +63,123 @@ def live(refs):
     return result
 
 
-def require_reconciliation_context(source, reviewed_head, env):
-    pr = env.get('CHANGE_ID')
-    approved = RECONCILIATIONS.get(pr)
-    if (approved is None or source != approved['source'] or reviewed_head is not None
+def canonical_manifest(body):
+    return json.dumps(body, sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=True).encode('utf-8')
+
+
+def manifest_payload(manifest):
+    if not isinstance(manifest, dict):
+        raise RouteUnavailable('manifest-invalid')
+    missing = [name for name in MANIFEST_FIELDS if name not in manifest]
+    if missing or not isinstance(manifest.get('signature'), str):
+        raise RouteUnavailable('manifest-invalid')
+    body = {name: manifest[name] for name in MANIFEST_FIELDS}
+    for name in OPTIONAL_MANIFEST_FIELDS:
+        if name in manifest:
+            body[name] = manifest[name]
+    return canonical_manifest(body)
+
+
+def verify_manifest_signature(manifest):
+    """Verify the detached owner signature over the canonical manifest bytes."""
+    payload = manifest_payload(manifest)
+    with tempfile.TemporaryDirectory(prefix='promotion-reconciliation-') as tmp:
+        data = Path(tmp) / 'payload'
+        sig = Path(tmp) / 'payload.sig'
+        signers = Path(tmp) / 'allowed_signers'
+        data.write_bytes(payload)
+        sig.write_text(manifest['signature'], encoding='utf-8')
+        signers.write_text(f'{SIGN_IDENTITY} {OWNER_SSH_PUBLIC_KEY}\n', encoding='utf-8')
+        try:
+            run = subprocess.run(
+                ['ssh-keygen', '-Y', 'verify', '-f', str(signers),
+                 '-I', SIGN_IDENTITY, '-n', SIGN_NAMESPACE, '-s', str(sig)],
+                input=payload, capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            raise RouteUnavailable('manifest-signature-unverifiable')
+    if run.returncode != 0:
+        raise RouteUnavailable('manifest-signature-invalid')
+
+
+def load_manifest(pr, head):
+    """Read PR-<pr>.json from the fetched PR object; never from the working tree."""
+    pr = '' if pr is None else str(pr)
+    if not pr.isdigit() or not OID.fullmatch(head):
+        raise RouteUnavailable('manifest-pr-or-head-invalid')
+    path = f'{MANIFEST_DIR}/{MANIFEST_NAME.format(pr=pr)}'
+    try:
+        text = git('show', f'{head}:{path}')
+    except subprocess.CalledProcessError:
+        raise RouteUnavailable('manifest-missing')
+    try:
+        manifest = json.loads(text)
+    except (ValueError, TypeError):
+        raise RouteUnavailable('manifest-invalid')
+    # Signature first: no field is trusted until the owner signature verifies.
+    verify_manifest_signature(manifest)
+    conflicts = manifest.get('conflict_paths')
+    bases = manifest.get('bases')
+    if (manifest.get('schema_version') != MANIFEST_SCHEMA
+            or str(manifest.get('pr')) != pr
+            or not isinstance(manifest.get('source_branch'), str)
+            or not manifest['source_branch']
+            or any(not OID.fullmatch(str(manifest.get(key)))
+                   for key in ('parent', 'reviewed_head', 'reviewed_tree'))
+            or not isinstance(bases, dict)
+            or set(bases) != set(BRANCHES)
+            or any(not OID.fullmatch(str(sha)) for sha in bases.values())
+            or not isinstance(conflicts, list) or not conflicts
+            or any(not isinstance(item, str) or not item for item in conflicts)
+            or len(conflicts) != len(set(conflicts))
+            or not isinstance(manifest.get('run_id'), str) or not manifest['run_id']):
+        raise RouteUnavailable('manifest-invalid')
+    if 'guard_files' in manifest:
+        guards = manifest['guard_files']
+        if (not isinstance(guards, list)
+                or any(not isinstance(item, str) or not item for item in guards)):
+            raise RouteUnavailable('manifest-invalid')
+    return manifest
+
+
+def require_reconciliation_context(manifest, source, env):
+    """Jenkins: trusted job/PR/target binding, with no per-PR enumeration."""
+    pr = str(manifest['pr'])
+    if (source != manifest['source_branch']
+            or env.get('CHANGE_ID') != pr
             or env.get('JOB_NAME') != f'ragnarsec-hardened-images/PR-{pr}'
             or env.get('CHANGE_FORK')
             or env.get('CHANGE_TARGET') != 'development'):
         raise RouteUnavailable('unsupported-reconciliation-context')
-    return approved
 
 
-def require_reconciliation_pins(reconciliation, refs, head):
-    if (any(refs[f'refs/heads/{name}'] != sha for name, sha in reconciliation['bases'].items())
-            or git('rev-list', '--parents', '-n1', head).strip() != f"{head} {reconciliation['parent']}"):
+def require_actions_reconciliation_context(manifest, source, reviewed_head, change_id, repo):
+    """Actions: trusted pull_request_target event binding; base checkout stays policy."""
+    pr = '' if change_id is None else str(change_id)
+    if (repo != 'yonrasgg/ragnarsec-hardened-images'
+            or not pr.isdigit()
+            or pr != str(manifest['pr'])
+            or source != manifest['source_branch']
+            or reviewed_head is None
+            or not OID.fullmatch(reviewed_head)):
+        raise RouteUnavailable('unsupported-reconciliation-context')
+
+
+def require_reconciliation_pins(manifest, refs, head):
+    """head is the reviewed source commit named by the signed manifest."""
+    if (any(refs[f'refs/heads/{name}'] != sha for name, sha in manifest['bases'].items())
+            or git('rev-list', '--parents', '-n1', head).strip()
+            != f"{head} {manifest['parent']}"
+            or git('rev-parse', f'{head}^{{tree}}').strip() != manifest['reviewed_tree']):
         raise RouteUnavailable('reconciliation-bases-or-source-parent-moved')
-    guard_files = reconciliation.get('guard_files')
-    if guard_files is not None:
-        changed = git('diff', '--name-only', '-z', reconciliation['parent'], head).split('\0')[:-1]
-        if changed != guard_files:
+    guards = manifest.get('guard_files')
+    if guards is not None:
+        changed = git('diff', '--name-only', '-z', manifest['parent'], head).split('\0')[:-1]
+        if changed != guards:
             raise RouteUnavailable('reconciliation-unreviewed-guard-files')
 
 
-def plan_reconciliation(path, inputs):
+def plan_reconciliation(path, inputs, expected_reviewed_tree=None):
     """Model the two named target-based drafts, never mark a direct squash clean."""
     repo = Repository(os.fspath(path))
     repo.check_inputs(inputs)
@@ -202,6 +187,8 @@ def plan_reconciliation(path, inputs):
     reviewed_tree = repo.require_oid('rev-parse', f'{fix}^{{tree}}')
     if repo.phases[0]['source_tree_matches'] is not True:
         raise RouteUnavailable('reconciliation-source-tree-mismatch')
+    if expected_reviewed_tree is not None and reviewed_tree != expected_reviewed_tree:
+        raise RouteUnavailable('reconciliation-reviewed-tree-mismatch')
     for name, source in (('staging', 'development'), ('main', 'staging')):
         base = inputs[name]
         planned = repo.require_oid('commit-tree', reviewed_tree, '-p', base, '--no-gpg-sign',
@@ -214,18 +201,25 @@ def plan_reconciliation(path, inputs):
             'requires_verified_reconciliation_prs': True}
 
 
-def check(source, reviewed_head, reconcile=False):
+def check(source, reviewed_head, reconcile=False, actions_change_id=None, actions_repo=None,
+          manifest_head=None, manifest_pr=None):
     if not SOURCE.fullmatch(source):
         raise RouteUnavailable('unsupported-source')
-    reconciliation = require_reconciliation_context(source, reviewed_head, os.environ) if reconcile else None
+    # Bind the trusted event before any ref work or manifest read: a wrong PR
+    # number or repository must never reach the admission path.
+    if reconcile and reviewed_head is not None:
+        event_pr = '' if manifest_pr is None else str(manifest_pr)
+        trusted_pr = '' if actions_change_id is None else str(actions_change_id)
+        if (not event_pr.isdigit() or event_pr != trusted_pr
+                or actions_repo != 'yonrasgg/ragnarsec-hardened-images'):
+            raise RouteUnavailable('unsupported-reconciliation-context')
     prefix = 'refs/heads/'
     source_ref = prefix + source
     try:
         git('check-ref-format', source_ref)
     except subprocess.CalledProcessError as exc:
         raise RouteUnavailable('unsupported-source') from exc
-    branches = ('development', 'staging', 'main')
-    refs = [prefix + name for name in branches] + [source_ref]
+    refs = [prefix + name for name in BRANCHES] + [source_ref]
     pins = live(refs)
     head = pins[source_ref]
     checkout = git('rev-parse', '--verify', 'HEAD').strip()
@@ -240,10 +234,39 @@ def check(source, reviewed_head, reconcile=False):
         if checkout != pins[prefix + 'development']:
             raise RouteUnavailable('checkout-does-not-match-live-base')
     git('fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', 'origin', *refs)
-    if reconciliation is not None:
-        require_reconciliation_pins(reconciliation, pins, head)
+
+    manifest = None
+    if reconcile:
+        if reviewed_head is not None:
+            pr = '' if manifest_pr is None else str(manifest_pr)
+            trusted_pr = '' if actions_change_id is None else str(actions_change_id)
+            if (not pr.isdigit() or pr != trusted_pr
+                    or manifest_head is None or manifest_head != reviewed_head):
+                raise RouteUnavailable('unsupported-reconciliation-context')
+        else:
+            pr = os.environ.get('CHANGE_ID') or ''
+            if not pr.isdigit():
+                raise RouteUnavailable('unsupported-reconciliation-context')
+            manifest_head = head
+        manifest = load_manifest(pr, manifest_head)
+        if reviewed_head is not None:
+            require_actions_reconciliation_context(manifest, source, reviewed_head,
+                                                   actions_change_id, actions_repo)
+        else:
+            require_reconciliation_context(manifest, source, os.environ)
+        reviewed_source = manifest['reviewed_head']
+        try:
+            ancestry = subprocess.run(
+                ['git', '--no-replace-objects', 'merge-base', '--is-ancestor',
+                 reviewed_source, head], capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            raise RouteUnavailable('manifest-reviewed-head-unverifiable')
+        if ancestry.returncode != 0:
+            raise RouteUnavailable('manifest-reviewed-head-not-in-source')
+        require_reconciliation_pins(manifest, pins, reviewed_source)
+
     args = [sys.executable, '-B', str(ROUTE), '--fix-head', head]
-    for name in branches:
+    for name in BRANCHES:
         args.extend(('--' + name, pins[prefix + name]))
     run = subprocess.run(args, capture_output=True, text=True, timeout=240)
     report = json.loads(run.stdout)
@@ -251,22 +274,24 @@ def check(source, reviewed_head, reconcile=False):
         raise RouteUnavailable('invalid-route-report')
     if live(refs) != pins:
         raise RouteUnavailable('live-refs-changed-during-route-check')
-    if reconciliation is not None:
+    if manifest is not None:
         failed = report.get('phases', [])[-1:]
         if (run.returncode != 1 or not failed or failed[0].get('lane') != 'development-to-staging'
-                or failed[0].get('conflict_paths') != reconciliation['conflicts']):
+                or failed[0].get('conflict_paths') != manifest['conflict_paths']):
             raise RouteUnavailable('unrecognized-direct-route-conflict')
-        inputs = dict(reconciliation['bases'], fix_head=head)
-        planned = plan_reconciliation('.', inputs)
+        inputs = dict(manifest['bases'], fix_head=manifest['reviewed_head'])
+        planned = plan_reconciliation('.', inputs, manifest['reviewed_tree'])
         if live(refs) != pins:
             raise RouteUnavailable('live-refs-changed-during-route-check')
-        return dict(planned, direct_route=report)
+        return dict(planned, direct_route=report, manifest_pr=manifest['pr'],
+                    manifest_reviewed_head=manifest['reviewed_head'],
+                    run_id=manifest['run_id'])
     if run.returncode == 0:
         expected = ['fix-to-development', 'development-to-staging', 'staging-to-main']
         phases = report.get('phases', [])
-        if [p.get('lane') for p in phases] != expected:
+        if [item.get('lane') for item in phases] != expected:
             raise RouteUnavailable('incomplete-promotion-route')
-        if any(p.get('source_tree_matches') is not True for p in phases[1:]):
+        if any(item.get('source_tree_matches') is not True for item in phases[1:]):
             report.update(result='tree-mismatch', exit_code=1)
     return report
 
@@ -275,11 +300,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', required=True, help='internal fix branch from the PR event')
     parser.add_argument('--reviewed-head', help='expected PR head for a trusted Actions base checkout')
-    parser.add_argument('--approved-reconciliation', action='store_true',
-                        help='verify the one-time reconciliation pinned to this Jenkins PR')
+    parser.add_argument('--allow-manifest-reconciliation', action='store_true',
+                        help='consider an owner-signed manifest in the PR object; never approve by itself')
+    parser.add_argument('--manifest-from-pr', help='PR head to read the signed manifest from (Actions)')
+    parser.add_argument('--pr', help='trusted PR number supplied by the event')
+    parser.add_argument('--change-id', help='trusted PR number supplied by the Actions event')
+    parser.add_argument('--repo', help='trusted GITHUB_REPOSITORY supplied by the Actions event')
     args = parser.parse_args()
     try:
-        output = check(args.source, args.reviewed_head, args.approved_reconciliation)
+        output = check(args.source, args.reviewed_head, args.allow_manifest_reconciliation,
+                       args.change_id, args.repo, args.manifest_from_pr, args.pr)
     except RouteUnavailable as exc:
         output = dict(result='blocked', exit_code=2, reason=str(exc), merge_authorized=False)
     except (OSError, subprocess.SubprocessError, ValueError, PreflightError, RouteConflict):

@@ -316,26 +316,27 @@ pipeline {
         when { expression { env.CHANGE_TARGET == 'development' } }
         steps {
           dir('ci-route') { deleteDir() }
+          // Historical reconciliation aliases, frozen as documentation only.
+          // Admission comes from the owner-signed PR manifest; this list is NOT an allowlist.
+          // 'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'
+          // 'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'
+          // 'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'
+          // 'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'
+          // 'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'
+          // 'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'
+          // 'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125'
+          // 'ragnarsec-hardened-images/PR-219:219:fix/o1-ds007-main-lane-repin-20261125'
+          // 'ragnarsec-hardened-images/PR-222:222:fix/o1-ds007-staging-lane-repin-20261125'
+          // 'ragnarsec-hardened-images/PR-224:224:fix/o1-ds007-lane-pins-final-20261125'
+          // 'ragnarsec-hardened-images/PR-215:215:fix/promotion-candidate-evaluator-20261125'
+          // 'ragnarsec-hardened-images/PR-233:233:fix/repin-unblock-sync-lanes-20261125'
+          // 'ragnarsec-hardened-images/PR-236:236:fix/ansible-check-publisher-20261126'
+          // 'ragnarsec-hardened-images/PR-238:238:fix/actions-reconciliation-preflight-20261126'
           sh '''
             set -euo pipefail
             mkdir -m 700 ci-route
-            set -- --source "$CHANGE_BRANCH"
-            case "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" in
-              'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'|\
-              'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'|\
-              'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'|\
-              'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'|\
-              'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'|\
-              'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'|\
-              'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125'|\
-              'ragnarsec-hardened-images/PR-219:219:fix/o1-ds007-main-lane-repin-20261125'|\
-              'ragnarsec-hardened-images/PR-222:222:fix/o1-ds007-staging-lane-repin-20261125'|\
-              'ragnarsec-hardened-images/PR-224:224:fix/o1-ds007-lane-pins-final-20261125'|\
-              'ragnarsec-hardened-images/PR-215:215:fix/promotion-candidate-evaluator-20261125'|\
-              'ragnarsec-hardened-images/PR-233:233:fix/repin-unblock-sync-lanes-20261125')
-                set -- "$@" --approved-reconciliation
-                ;;
-            esac
+            set -- --source "$CHANGE_BRANCH" --pr "$CHANGE_ID" \
+              --allow-manifest-reconciliation
             python3 tools/jenkins_promotion_route.py "$@" | tee ci-route/promotion-route.json
           '''
         }

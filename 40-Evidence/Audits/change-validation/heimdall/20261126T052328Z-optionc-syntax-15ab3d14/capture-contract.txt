@@ -1,0 +1,17 @@
+CAPTURE CONTRACT — Option C pilot (DRAFT CUSTODY, NOT VERIFIED)
+destination: 40-Evidence/Audits/change-validation/heimdall/20261126T052328Z-optionc-syntax-15ab3d14/
+source_stage: /home/userone/ragnarsec-optionc-pilot/20261126T052328Z-optionc-syntax-15ab3d14/ (heimdall, userone)
+
+order (fail-closed):
+  command -> output -> portable capture -> sha256 -> owner note -> vault-gate
+
+Required captures before any receipt may be signed:
+  command-C1.{stdout,stderr,rc}, command-C2.{stdout,stderr,rc}
+  run-timeline.tsv, SHA256SUMS.captures, SHA256SUMS, tree-assertion.json
+  receipt.json (canonical v1.0, owner-signed)
+
+Sanitization: no private key, token, vault plaintext or secret path.
+Missing capture => partial; never rename or rewrite a run in place.
+Integrity: sha256sum -c SHA256SUMS -> 0; excludes itself and the EVD note.
+Authority: a capture file found in a run directory is not authority; owner review required.
+This directory is a DRAFT in a local fix branch; no vault write is performed.
