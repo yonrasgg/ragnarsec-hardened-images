@@ -127,8 +127,10 @@ jobs:
           fi
 
           if (( count == 0 )); then
+            # Official Checks API: create is POST /repos/{owner}/{repo}/check-runs
+            # (head_sha goes in the body); /commits/{ref}/check-runs is GET-only.
             build_body yes | gh api --hostname github.com --method POST \
-              "repos/${REPOSITORY}/commits/${HEAD_SHA}/check-runs" --input -
+              "repos/${REPOSITORY}/check-runs" --input -
             echo "Published ${CHECK_NAME} for ${HEAD_SHA}."
           elif (( count == 1 )); then
             check_id="$(printf '%s\n' "$ids" | head -n 1)"
