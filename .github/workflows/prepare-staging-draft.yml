@@ -1,9 +1,18 @@
 name: Prepare the human staging draft
 
+# Trust boundary (CI-004, post-migration):
+#   * The privileged PR-close event is REMOVED. This workflow can mint an
+#     installation token and POST /pulls, so it must never be triggered by an
+#     untrusted PR event. It is owner-triggered only, on the protected `main` ref.
+#   * `integrated_pr` is the last Ansible-qualified fix/* PR already squashed
+#     into development. It is DATA (a decimal PR number), validated again by
+#     tools/prepare_staging_draft.py; no PR tree is checked out or executed.
+#   * Verifier and draft creation run from protected `main` bytes. GITHUB_TOKEN
+#     stays read-only in preflight; the App token exists only in the draft job
+#     and is used solely for the draft POST. A human still reviews and merges;
+#     publication remains a separate, manually approved stage in the Jenkins
+#     pipeline.
 "on":
-  pull_request_target:
-    branches: [development]
-    types: [closed]
   workflow_dispatch:
     inputs:
       integrated_pr:
@@ -21,8 +30,7 @@ jobs:
   preflight:
     if: >-
       github.repository == 'yonrasgg/ragnarsec-hardened-images' &&
-      ((github.event_name == 'pull_request_target' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       pull-requests: read
