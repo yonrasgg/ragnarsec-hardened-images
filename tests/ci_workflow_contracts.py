@@ -21,7 +21,7 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
             'prepare-staging-draft.yml': '5d0e77b986eb341c5f9b4a67d25d86002237d39adfc07b8e3f53bb53377df963',
             'promotion-route-preflight.yml': '32922887ac1b9d3649045388d2eff30b0463c0a237331758de44ef825014b2e6',
-            'publish-ansible-check.yml': '45ded2de71591648fe7f38e179fe0967e585b43ee1855679eebd38a74d87001a',
+            'publish-ansible-check.yml': '28e73414e4e202c9aea34c5f0470d97d7b42e9ea48b12ba73ac0afd7e2bb03be',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
         for name, digest in reviewed.items():
