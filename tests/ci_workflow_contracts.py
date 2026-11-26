@@ -28,3 +28,24 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
             path = workflows / name
             self.assertTrue(path.is_file() and not path.is_symlink())
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
+
+    def test_preflight_reads_signed_manifest_from_trusted_default_branch(self):
+        # pull_request_target resolves this file from the default branch (main),
+        # never from the PR head. The legacy bare invocation reports a direct
+        # route conflict for every reconciliation-admitted PR; it must not be
+        # restored. The base checkout and owner-signed manifest flags stay.
+        workflow = (suite.ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
+        self.assertIn('pull_request_target:', workflow)
+        self.assertIn('ref: ${{ github.event.pull_request.base.sha }}', workflow)
+        self.assertIn('persist-credentials: false', workflow)
+        self.assertIn('--change-id "$PR_NUMBER"', workflow)
+        self.assertIn('--repo "$REPO"', workflow)
+        self.assertIn('--pr "$PR_NUMBER"', workflow)
+        self.assertIn('--manifest-from-pr "$PR_HEAD_SHA"', workflow)
+        self.assertIn('--allow-manifest-reconciliation', workflow)
+        self.assertIn('python3 -B tools/jenkins_promotion_route.py "$@"', workflow)
+        self.assertNotIn(
+            'python3 -B tools/jenkins_promotion_route.py --source "$SOURCE_BRANCH" '
+            '--reviewed-head "$PR_HEAD_SHA"',
+            workflow,
+        )
