@@ -43,6 +43,12 @@ jobs:
         env:
           SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          python3 -B tools/jenkins_promotion_route.py --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA"
+          set -- --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA" \
+            --change-id "$PR_NUMBER" --repo "$REPO" \
+            --pr "$PR_NUMBER" --manifest-from-pr "$PR_HEAD_SHA" \
+            --allow-manifest-reconciliation
+          python3 -B tools/jenkins_promotion_route.py "$@"

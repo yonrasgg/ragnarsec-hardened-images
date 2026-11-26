@@ -1,0 +1,192 @@
+name: Publish the trusted Ansible check
+
+# This workflow authors the one check run that tools/prepare_staging_draft.py
+# trusts after a fix/* PR is squashed into development. The check name, the
+# GitHub App ID and the summary format are the exact binding verified by that
+# consumer, so they are fixed here rather than read from mutable variables.
+"on":
+  pull_request:
+    branches: [development]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ansible-check-publisher-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish exactly one ansible/validate check
+    if: >-
+      github.repository == 'yonrasgg/ragnarsec-hardened-images' &&
+      startsWith(github.event.pull_request.head.ref, 'fix/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # App ID 5929884 is the verified GitHub App ID and the ruleset
+      # integration_id bound with strict required checks. Its installation id
+      # is 185964213; owner + repositories scopes the token to this repository.
+      # The installation token carries Checks: write, while GITHUB_TOKEN stays
+      # read-only. The PEM lives only in the Actions secret and never in a file.
+      - name: Create the GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0 (v3)
+        with:
+          app-id: '5929884'
+          private-key: ${{ secrets.RAGNARSEC_ANSIBLE_APP_PRIVATE_KEY }}
+          owner: yonrasgg
+          repositories: ragnarsec-hardened-images
+
+      # The gate runs tools/ansible_receipt_gate.py from the PR tree. Without a
+      # checkout the runner workspace is empty and python3 exits 2 before any
+      # receipt verification happens. No credentials are persisted in .git.
+      - name: Check out the repository for the receipt gate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # The GATE never asserts success itself. It fetches the receipt staged
+      # at the allowlisted path in the PR tree, resolves the PR head tree with
+      # the read-only Git API and runs the ordered fail-closed verifier in
+      # tools/ansible_receipt_gate.py. Trust is a pinned public SSH key hash:
+      # no new secret is introduced and no fork code is ever executed here.
+      # Until an owner produces and pins a pilot receipt, the decision is
+      # failure and the published check says exactly why.
+      - name: Verify the tree-bound Ansible validation receipt
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RECEIPT_PATH: receipts/ansible-validate.json
+          # live_decision() calls gh api for commit/tree/contents. The gate is
+          # read-only, so use the least-privilege GITHUB_TOKEN (contents: read)
+          # rather than the Checks-writing App token used to publish below.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$REPOSITORY" == 'yonrasgg/ragnarsec-hardened-images' ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          python3 tools/ansible_receipt_gate.py \
+            --decision-out "${RUNNER_TEMP}/ansible-receipt-decision.json"
+
+      - name: Publish or update the single trusted check run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+          CHECK_NAME: ansible/validate
+          APP_ID: '5929884'
+          DECISION_FILE: ${{ runner.temp }}/ansible-receipt-decision.json
+        run: |
+          set -euo pipefail
+
+          # Fail closed on anything that is not an in-repository fix/* PR into
+          # development. Fork code must never obtain an App token.
+          [[ "$REPOSITORY" == 'yonrasgg/ragnarsec-hardened-images' ]]
+          [[ "$BASE_REF" == 'development' ]]
+          [[ "$HEAD_REPO" == "$REPOSITORY" ]]
+          [[ "$HEAD_REF" =~ ^fix/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          # The verified decision is the only source of the conclusion. A
+          # missing or unreadable decision is itself fail-closed.
+          [[ -s "$DECISION_FILE" ]] || {
+            echo "::error::receipt verification decision missing; refusing to publish success" >&2
+            exit 1
+          }
+
+          # The parent of the eventual squash is development HEAD at merge
+          # time, which is this PR's base.sha at publication time.
+          summary="pr=${PR_NUMBER};base=${BASE_SHA};head=${HEAD_SHA}"
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Build the request body without ever interpolating untrusted text
+          # into a shell command. The update body omits head_sha because the
+          # PATCH endpoint does not accept it. The summary remains byte-
+          # identical to the previously trusted binding surface.
+          build_body() {
+            INCLUDE_HEAD="$1" COMPLETED_AT="$completed_at" SUMMARY="$summary" \
+            DECISION_FILE="$DECISION_FILE" python3 -c '
+          import json, os
+          with open(os.environ["DECISION_FILE"], encoding="utf-8") as handle:
+              decision = json.load(handle)
+          trusted = decision.get("ok") is True
+          body = {
+              "name": os.environ["CHECK_NAME"],
+              "status": "completed",
+              "conclusion": "success" if trusted else "failure",
+              "completed_at": os.environ["COMPLETED_AT"],
+              "output": {
+                  "title": decision["title"],
+                  "summary": os.environ["SUMMARY"],
+                  "text": decision["text"],
+              },
+          }
+          if trusted:
+              body["external_id"] = decision["external_id"]
+              body["details_url"] = decision["details_url"]
+          if os.environ["INCLUDE_HEAD"] == "yes":
+              body["head_sha"] = os.environ["HEAD_SHA"]
+          print(json.dumps(body))
+          '
+          }
+
+          # Enumerate every check on this head, not just the latest one, so a
+          # previously published duplicate is detected instead of compounded.
+          # gh api -f sends URL-encoded query parameters on a GET request.
+          # gh api switches to POST when -f/--field is used; --method GET is
+          # mandatory here or the check-runs listing returns HTTP 404.
+          response="$(gh api --hostname github.com --method GET \
+            "repos/${REPOSITORY}/commits/${HEAD_SHA}/check-runs" \
+            -f check_name="$CHECK_NAME" -f filter=all -f per_page=100)"
+
+          total="$(printf '%s' "$response" | python3 -c \
+            'import json,sys; print(json.load(sys.stdin).get("total_count", 0))')"
+          if (( total >= 100 )); then
+            echo "::error::check list is incomplete (${total}); refusing to publish" >&2
+            exit 1
+          fi
+
+          # A trusted check has our exact name, our App id and this exact head.
+          ids="$(printf '%s' "$response" | python3 -c '
+          import json, os, sys
+          runs = json.load(sys.stdin).get("check_runs", [])
+          ids = [c["id"] for c in runs
+                 if c.get("name") == os.environ["CHECK_NAME"]
+                 and (c.get("app") or {}).get("id") == int(os.environ["APP_ID"])
+                 and c.get("head_sha") == os.environ["HEAD_SHA"]
+                 and type(c.get("id")) is int and c["id"] > 0]
+          print("\n".join(str(i) for i in ids))
+          ')"
+
+          if [[ -z "$ids" ]]; then
+            count=0
+          else
+            count="$(printf '%s\n' "$ids" | grep -c .)"
+          fi
+
+          if (( count == 0 )); then
+            # Official Checks API: create is POST /repos/{owner}/{repo}/check-runs
+            # (head_sha goes in the body); /commits/{ref}/check-runs is GET-only.
+            build_body yes | gh api --hostname github.com --method POST \
+              "repos/${REPOSITORY}/check-runs" --input -
+            echo "Published ${CHECK_NAME} for ${HEAD_SHA}."
+          elif (( count == 1 )); then
+            check_id="$(printf '%s\n' "$ids" | head -n 1)"
+            build_body no | gh api --hostname github.com --method PATCH \
+              "repos/${REPOSITORY}/check-runs/${check_id}" --input -
+            echo "Updated trusted check ${check_id} for ${HEAD_SHA}."
+          else
+            echo "::error::${count} trusted ${CHECK_NAME} checks exist for ${HEAD_SHA}; refusing to add another" >&2
+            exit 1
+          fi
