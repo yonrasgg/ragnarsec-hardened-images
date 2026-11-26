@@ -9,10 +9,17 @@ import re
 import subprocess
 from urllib.parse import urlencode
 
+from ansible_receipt_gate import reviewed_tree_sha
+
 
 REPO = 'yonrasgg/ragnarsec-hardened-images'
 REPO_ID = 1426336836
 OPEN_DRAFTS = 'pulls?state=open&base=staging&head=yonrasgg%3Adevelopment&per_page=100'
+EVIDENCE_ROOT = '40-Evidence/Audits/change-validation/'
+RECEIPT_REF = re.compile(r'\breceipt_ref=([^\s]+)\b')
+RECEIPT_SHA = re.compile(r'\breceipt_sha256=([a-f0-9]{64})\b')
+TARGET_TREE = re.compile(r'\btarget_tree_sha=([a-f0-9]{40})\b')
+HEAD_TREE = re.compile(r'\bhead_tree_sha=([a-f0-9]{40})\b')
 
 
 class Hold(Exception):
@@ -48,6 +55,38 @@ def before_merge(check, merged_at):
         return datetime.fromisoformat(value) <= datetime.fromisoformat(merged_at)
     except (ValueError, TypeError):
         return False
+
+
+def receipt_binding(check, tree, reviewed):
+    """Read the receipt reference published by the GATE; never infer one.
+
+    The check's external_id is the SHA-256 of the exact receipt bytes. The
+    check text must repeat that hash, an allowlisted EVD receipt path, the
+    full head tree and the reviewed tree (head tree minus the evidence path,
+    which a self-referential in-tree receipt cannot bind to). Any absence is
+    a Hold, never a draft.
+    """
+    external_id = check.get('external_id')
+    text = (check.get('output') or {}).get('text')
+    if not isinstance(external_id, str) or re.fullmatch(r'[a-f0-9]{64}', external_id) is None:
+        return None
+    if not isinstance(text, str):
+        return None
+    sha = RECEIPT_SHA.search(text)
+    ref = RECEIPT_REF.search(text)
+    bound = TARGET_TREE.search(text)
+    head = HEAD_TREE.search(text)
+    if sha is None or ref is None or bound is None or head is None:
+        return None
+    if (sha.group(1) != external_id or head.group(1) != tree
+            or bound.group(1) != reviewed):
+        return None
+    path = ref.group(1)
+    if (not path.startswith(EVIDENCE_ROOT) or path.startswith('/')
+            or '..' in path or not path.endswith('/receipt.json')):
+        return None
+    return dict(external_id=external_id, receipt_ref=path,
+                target_tree_sha=bound.group(1), head_tree_sha=head.group(1))
 
 
 def plan_draft(get, number, check_name, app_id):
@@ -97,9 +136,20 @@ def plan_draft(get, number, check_name, app_id):
     if check.get('conclusion') in ('failure', 'timed_out'):
         raise Correct(f'fix/ansible-retry-pr-{number} → development')
     require(check.get('conclusion') == 'success', 'ansible-did-not-succeed')
+    # A green alone is no longer enough: the GATE must have bound a real,
+    # verified receipt to this exact reviewed tree. Absence holds the draft.
+    tree_entries = get(f'git/trees/{tree}').get('tree')
+    require(isinstance(tree_entries, list), 'ansible-head-tree-unreadable')
+    reviewed = reviewed_tree_sha(tree_entries)
+    receipt = receipt_binding(check, tree, reviewed)
+    require(receipt is not None, 'ansible-receipt-not-bound')
     require(get(f'git/commits/{stage}')['tree']['sha'] != tree, 'nothing-new-for-staging')
     require(get(OPEN_DRAFTS) == [], 'staging-pr-already-open')
-    return dict(pr=number, head=head, development=dev, staging=stage, ansible_check=check['id'])
+    return dict(pr=number, head=head, development=dev, staging=stage,
+                ansible_check=check['id'], ansible_receipt=receipt['external_id'],
+                ansible_receipt_ref=receipt['receipt_ref'],
+                ansible_receipt_tree=receipt['target_tree_sha'],
+                ansible_receipt_head_tree=receipt['head_tree_sha'])
 
 
 def create_once(get, post, number, check_name, app_id, expected):
@@ -111,8 +161,9 @@ def create_once(get, post, number, check_name, app_id, expected):
         'base': 'staging',
         'draft': True,
         'body': (
-            f"Development `{plan['development']}` was checked with Ansible "
-            f"for #{plan['pr']} (check `{plan['ansible_check']}`).\n\n"
+            f"Development `{plan['development']}` has a verified Ansible validation "
+            f"receipt for tree `{plan['ansible_receipt_tree']}` accepted by check "
+            f"`{plan['ansible_check']}` (receipt `{plan['ansible_receipt']}`).\n\n"
             "Review the current diff and applicable checks. A human marks it ready and "
             "performs **Squash and merge** only when the review passes. A confirmed failure "
             "returns through a new `fix/*` branch into `development`. "

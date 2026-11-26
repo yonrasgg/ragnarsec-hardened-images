@@ -39,6 +39,26 @@ jobs:
           owner: yonrasgg
           repositories: ragnarsec-hardened-images
 
+      # The GATE never asserts success itself. It fetches the receipt staged
+      # at the allowlisted path in the PR tree, resolves the PR head tree with
+      # the read-only Git API and runs the ordered fail-closed verifier in
+      # tools/ansible_receipt_gate.py. Trust is a pinned public SSH key hash:
+      # no new secret is introduced and no fork code is ever executed here.
+      # Until an owner produces and pins a pilot receipt, the decision is
+      # failure and the published check says exactly why.
+      - name: Verify the tree-bound Ansible validation receipt
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RECEIPT_PATH: receipts/ansible-validate.json
+        run: |
+          set -euo pipefail
+          [[ "$REPOSITORY" == 'yonrasgg/ragnarsec-hardened-images' ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          python3 tools/ansible_receipt_gate.py \
+            --decision-out "${RUNNER_TEMP}/ansible-receipt-decision.json"
+
       - name: Publish or update the single trusted check run
         shell: bash
         env:
@@ -52,6 +72,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           CHECK_NAME: ansible/validate
           APP_ID: '5929884'
+          DECISION_FILE: ${{ runner.temp }}/ansible-receipt-decision.json
         run: |
           set -euo pipefail
 
@@ -65,6 +86,13 @@ jobs:
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
 
+          # The verified decision is the only source of the conclusion. A
+          # missing or unreadable decision is itself fail-closed.
+          [[ -s "$DECISION_FILE" ]] || {
+            echo "::error::receipt verification decision missing; refusing to publish success" >&2
+            exit 1
+          }
+
           # The parent of the eventual squash is development HEAD at merge
           # time, which is this PR's base.sha at publication time.
           summary="pr=${PR_NUMBER};base=${BASE_SHA};head=${HEAD_SHA}"
@@ -72,20 +100,29 @@ jobs:
 
           # Build the request body without ever interpolating untrusted text
           # into a shell command. The update body omits head_sha because the
-          # PATCH endpoint does not accept it.
+          # PATCH endpoint does not accept it. The summary remains byte-
+          # identical to the previously trusted binding surface.
           build_body() {
-            INCLUDE_HEAD="$1" COMPLETED_AT="$completed_at" SUMMARY="$summary" python3 -c '
+            INCLUDE_HEAD="$1" COMPLETED_AT="$completed_at" SUMMARY="$summary" \
+            DECISION_FILE="$DECISION_FILE" python3 -c '
           import json, os
+          with open(os.environ["DECISION_FILE"], encoding="utf-8") as handle:
+              decision = json.load(handle)
+          trusted = decision.get("ok") is True
           body = {
               "name": os.environ["CHECK_NAME"],
               "status": "completed",
-              "conclusion": "success",
+              "conclusion": "success" if trusted else "failure",
               "completed_at": os.environ["COMPLETED_AT"],
               "output": {
-                  "title": "Ansible validation passed",
+                  "title": decision["title"],
                   "summary": os.environ["SUMMARY"],
+                  "text": decision["text"],
               },
           }
+          if trusted:
+              body["external_id"] = decision["external_id"]
+              body["details_url"] = decision["details_url"]
           if os.environ["INCLUDE_HEAD"] == "yes":
               body["head_sha"] = os.environ["HEAD_SHA"]
           print(json.dumps(body))

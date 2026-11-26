@@ -5,6 +5,7 @@ import unittest
 from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from ansible_receipt_gate import reviewed_tree_sha
 from prepare_staging_draft import (
     Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft,
 )
@@ -14,6 +15,23 @@ class StagingDraftTests(unittest.TestCase):
     def setUp(self):
         self.fix, self.prior, self.dev, self.staging, self.tree = [c * 40 for c in 'abcde']
         self.name, self.app = 'ansible/validate', 5929884
+        self.receipt_sha = 'f' * 64
+        self.receipt_ref = ('40-Evidence/Audits/change-validation/heimdall/'
+                            'run-ansible-syntax-15ab3d14/receipt.json')
+        self.tree_entries = [
+            {'path': 'README.md', 'mode': '100644', 'type': 'blob', 'sha': 'a' * 40},
+            {'path': 'receipts', 'mode': '40000', 'type': 'tree', 'sha': 'b' * 40},
+        ]
+        self.reviewed_tree = reviewed_tree_sha(self.tree_entries)
+        self.receipt_text = '\n'.join((
+            'Tree-bound Ansible validation receipt verified.',
+            f'receipt_ref={self.receipt_ref}',
+            f'receipt_sha256={self.receipt_sha}',
+            f'target_tree_sha={self.reviewed_tree}',
+            f'head_tree_sha={self.tree}',
+            'verification_time=2026-11-26T00:00:00Z',
+            'result=pass',
+        ))
         self.repo = dict(id=REPO_ID, full_name=REPO)
         self.checks = f'commits/{self.fix}/check-runs?' + urlencode(
             dict(check_name=self.name, filter='latest', per_page=100))
@@ -28,13 +46,16 @@ class StagingDraftTests(unittest.TestCase):
                 tree=dict(sha=self.tree), verification=dict(verified=True, reason='valid'))),
             f'git/commits/{self.fix}': dict(tree=dict(sha=self.tree)),
             f'git/commits/{self.staging}': dict(tree=dict(sha='2' * 40)),
+            f'git/trees/{self.tree}': dict(tree=self.tree_entries, truncated=False),
             'rules/branches/development': [dict(type='required_status_checks', parameters=dict(
                 strict_required_status_checks_policy=True,
                 required_status_checks=[dict(context=self.name, integration_id=self.app)]))],
             self.checks: dict(total_count=1, check_runs=[dict(
                 id=29, name=self.name, app=dict(id=self.app), head_sha=self.fix,
                 status='completed', conclusion='success', completed_at='2026-11-23T18:00:00Z',
-                output=dict(summary=f'pr=17;base={self.prior};head={self.fix}'))]),
+                external_id=self.receipt_sha,
+                output=dict(summary=f'pr=17;base={self.prior};head={self.fix}',
+                            text=self.receipt_text))]),
             OPEN_DRAFTS: [],
         }
         self.posts = []
@@ -121,6 +142,67 @@ class StagingDraftTests(unittest.TestCase):
         self.data[f'git/commits/{changed}'] = dict(tree=dict(sha='2'*40))
         with self.assertRaisesRegex(Hold, 'draft-plan-changed'):
             self.create(plan)
+        self.assertFalse(self.posts)
+
+    def test_missing_receipt_reference_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        for key in ('external_id',):
+            original = check.pop(key)
+            try:
+                with self.subTest(key=key):
+                    with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                        self.plan()
+            finally:
+                check[key] = original
+        original = check['output'].pop('text')
+        try:
+            with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                self.plan()
+        finally:
+            check['output']['text'] = original
+        self.assertFalse(self.posts)
+
+    def test_invalid_receipt_hash_or_unallowlisted_ref_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        mutations = (
+            ('external_id', 'not-a-sha256'),
+            ('external_id', 'e' * 64),
+            ('text', self.receipt_text.replace(self.receipt_ref,
+                'tmp/leaked/' + self.receipt_ref.split('/')[-1])),
+        )
+        for key, value in mutations:
+            original = check['external_id'] if key == 'external_id' else check['output']['text']
+            with self.subTest(key=key, value=value[:24]):
+                if key == 'external_id':
+                    check['external_id'] = value
+                else:
+                    check['output']['text'] = value
+                with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                    self.plan()
+                if key == 'external_id':
+                    check['external_id'] = original
+                else:
+                    check['output']['text'] = original
+        self.assertFalse(self.posts)
+
+    def test_stale_or_tree_mismatched_receipt_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        stale_tree = '2' * 40
+        variants = (
+            self.receipt_text.replace(f'target_tree_sha={self.reviewed_tree}',
+                                      f'target_tree_sha={stale_tree}'),
+            self.receipt_text.replace(f'head_tree_sha={self.tree}',
+                                      f'head_tree_sha={stale_tree}'),
+            self.receipt_text.replace(f'receipt_sha256={self.receipt_sha}',
+                                      f'receipt_sha256={"9" * 64}'),
+        )
+        for text in variants:
+            original = check['output']['text']
+            with self.subTest(text=text[:60]):
+                check['output']['text'] = text
+                with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                    self.plan()
+                check['output']['text'] = original
         self.assertFalse(self.posts)
 
     def test_no_draft_before_fix_enters_development(self):
