@@ -239,6 +239,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-manifest-aware-20261126" ]; then
                     require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
                       development 0e2cf0a1121647a50ba8676270ac16231ad5c555
+                  elif [ "$source" = "sync/development-to-staging-wgdashboard-20261127" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development 5207978c8f529e8ca123c1af104538446bd17ed5
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
