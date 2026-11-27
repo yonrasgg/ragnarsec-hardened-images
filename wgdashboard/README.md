@@ -12,6 +12,8 @@ This document describes an image interface, not a deployed system.
   (multi-arch index with `linux/amd64` and `linux/arm64`).
 - Upstream runs Alpine with Python 3.15 and `wireguard-tools`.
 - No `apk upgrade`: this is an upstream image; patching moves the digest.
+- The admin UI is built from the checksum-pinned WGDashboard v4.3.4 source and
+  its npm lockfile on the builder. The runtime receives only the generated assets.
 
 ## Hardening declared
 
@@ -37,8 +39,10 @@ This document describes an image interface, not a deployed system.
 
 ## Patching
 
-Rebuild from a new reviewed upstream digest, re-scan, re-sign. Do not patch inside
-the running container and do not add `apk upgrade` to this Dockerfile.
+Rebuild from reviewed inputs, re-scan, and re-sign. The admin UI HTTP helpers
+in `frontend/fetch.js` preserve the session when the server denies a request
+with HTTP 403. HTTP 401 redirects to sign-in. The read-only API allowlist is
+enforced by the server.
 
 ## Controls and evidence
 
