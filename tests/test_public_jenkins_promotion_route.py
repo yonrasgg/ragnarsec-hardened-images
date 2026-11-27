@@ -259,6 +259,24 @@ class JenkinsPromotionRoute(unittest.TestCase):
                                             'unsupported-reconciliation-context'):
                     check(manifest['source_branch'], head, True, change_id, repo, head, '237')
 
+    def test_clean_ordinary_route_does_not_require_a_reconciliation_manifest(self):
+        repo = 'yonrasgg/ragnarsec-hardened-images'
+        source = 'fix/ordinary'
+        dev, stage, main, head = (digit * 40 for digit in '1234')
+        refs = {'refs/heads/development': dev, 'refs/heads/staging': stage,
+                'refs/heads/main': main, f'refs/heads/{source}': head}
+        direct = dict(exit_code=0, result='pass', merge_authorized=False, phases=[
+            dict(lane=lane, result='clean', source_tree_matches=True)
+            for lane in ('fix-to-development', 'development-to-staging', 'staging-to-main')
+        ])
+        with patch('jenkins_promotion_route.git', side_effect=['', dev + '\n', '']), \
+             patch('jenkins_promotion_route.live', return_value=refs), \
+             patch('jenkins_promotion_route.subprocess.run', return_value=subprocess.CompletedProcess(
+                 ['python3'], 0, json.dumps(direct), '')), \
+             patch('jenkins_promotion_route.load_manifest') as manifest:
+            self.assertEqual(check(source, head, True, '237', repo, head, '237'), direct)
+        manifest.assert_not_called()
+
     def test_actions_workflow_reads_the_signed_pr_manifest_without_allowlists(self):
         workflow = (ROOT / '.github/workflows/promotion-route-preflight.yml').read_text()
         for marker in ('--change-id "$PR_NUMBER"', '--repo "$REPO"', '--pr "$PR_NUMBER"',
