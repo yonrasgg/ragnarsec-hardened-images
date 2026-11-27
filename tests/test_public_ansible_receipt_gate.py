@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from ansible_receipt_gate import (  # noqa: E402
-    EVIDENCE_ROOT, GENESIS, RECEIPT_PATH, SCHEMA, SIGNATURE_NAMESPACE, TRUST,
+    EVIDENCE_ROOT, GENESIS, GIT_TREE_SCHEMA, RECEIPT_PATH, SCHEMA, SIGNATURE_NAMESPACE, TRUST,
     canonical_bytes, git_tree_sha, reviewed_tree_sha, sha256_bytes, verify_receipt,
 )
 
@@ -261,6 +261,46 @@ class ReceiptGateTests(unittest.TestCase):
         self.assertNotEqual(self.head_tree, self.reviewed_tree)
         self.assertEqual(reviewed_tree_sha(self.entries, RECEIPT_PATH), self.reviewed_tree)
 
+    def test_new_serialization_matches_git_and_binds_the_capture_manifest(self):
+        with tempfile.TemporaryDirectory(dir=self.root) as tmp:
+            checkout = Path(tmp)
+
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(checkout), *args]).strip()
+
+            git('init', '-q', '--object-format=sha1')
+            for name in ('tools/check', 'tools.txt', 'receipts/ansible-validate.json'):
+                path = checkout / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('fixture\n')
+            git('add', '.')
+            full = git('write-tree').decode()
+            entries = []
+            for line in git('ls-tree', '-z', full).split(b'\0'):
+                if line:
+                    metadata, name = line.split(b'\t')
+                    mode, kind, sha = metadata.decode().split()
+                    entries.append(dict(path=name.decode(), mode=mode, type=kind, sha=sha))
+            self.assertEqual(git_tree_sha(entries, schema=GIT_TREE_SCHEMA), full)
+            self.assertNotEqual(git_tree_sha(entries), full)
+            git('rm', '--cached', '-q', 'receipts/ansible-validate.json')
+            reviewed = git('write-tree').decode()
+            self.assertEqual(reviewed_tree_sha(entries, schema=GIT_TREE_SCHEMA), reviewed)
+
+        receipt = self.receipt()
+        reference = self.evd.replace('receipt.json', 'SHA256SUMS.captures')
+        receipt.update(schema=GIT_TREE_SCHEMA, target_tree_sha=reviewed, evidence_refs=[reference])
+        receipt['tree_assertion'].update(observed=reviewed, expected=reviewed)
+        raw = self.sign(receipt)
+        accepted = self.verify(raw, head_tree_sha=full, head_tree_entries=entries)
+        self.assertTrue(accepted['ok'], accepted['reason'])
+        self.assertIn(f'receipt_schema={GIT_TREE_SCHEMA}', accepted['text'])
+        self.assertIn(f'receipt_ref={reference}', accepted['text'])
+        self.assertEqual(self.verify(raw, head_tree_sha='0' * 40, head_tree_entries=entries)['reason'],
+                         'step-8:head-tree-mismatch')
+        receipt['evidence_refs'] = [self.evd]
+        invalid = self.verify(self.sign(receipt), head_tree_sha=full, head_tree_entries=entries)
+        self.assertEqual(invalid['reason'], 'step-11:canonical-evidence-ref-required')
 
 if __name__ == '__main__':
     unittest.main()

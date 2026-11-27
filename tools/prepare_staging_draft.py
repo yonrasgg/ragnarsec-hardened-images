@@ -9,14 +9,14 @@ import re
 import subprocess
 from urllib.parse import urlencode
 
-from ansible_receipt_gate import reviewed_tree_sha
+from ansible_receipt_gate import GIT_TREE_SCHEMA, SCHEMA, canonical_evidence_ref, git_tree_sha, reviewed_tree_sha
 
 
 REPO = 'yonrasgg/ragnarsec-hardened-images'
 REPO_ID = 1426336836
 OPEN_DRAFTS = 'pulls?state=open&base=staging&head=yonrasgg%3Adevelopment&per_page=100'
-EVIDENCE_ROOT = '40-Evidence/Audits/change-validation/'
 RECEIPT_REF = re.compile(r'\breceipt_ref=([^\s]+)\b')
+RECEIPT_SCHEMA = re.compile(r'^receipt_schema=(.*)$', re.M)
 RECEIPT_SHA = re.compile(r'\breceipt_sha256=([a-f0-9]{64})\b')
 TARGET_TREE = re.compile(r'\btarget_tree_sha=([a-f0-9]{40})\b')
 HEAD_TREE = re.compile(r'\bhead_tree_sha=([a-f0-9]{40})\b')
@@ -58,11 +58,11 @@ def before_merge(check, merged_at):
         return False
 
 
-def receipt_binding(check, tree, reviewed):
+def receipt_binding(check, tree, tree_entries):
     """Read the receipt reference published by the GATE; never infer one.
 
     The check's external_id is the SHA-256 of the exact receipt bytes. The
-    check text must repeat that hash, an allowlisted EVD receipt path, the
+    check text must repeat that hash, the canonical EVD reference, the
     full head tree, the reviewed tree (head tree minus the evidence path,
     which a self-referential in-tree receipt cannot bind to) and the reviewed
     parent commit the receipt binds to. Any absence is a Hold, never a draft.
@@ -73,6 +73,15 @@ def receipt_binding(check, tree, reviewed):
         return None
     if not isinstance(text, str):
         return None
+    schemas = RECEIPT_SCHEMA.findall(text)
+    if len(schemas) > 1:
+        return None
+    schema = schemas[0] if schemas else SCHEMA
+    if schema not in (SCHEMA, GIT_TREE_SCHEMA):
+        return None
+    if schema == GIT_TREE_SCHEMA and git_tree_sha(tree_entries, schema=schema) != tree:
+        return None
+    reviewed = reviewed_tree_sha(tree_entries, schema=schema)
     sha = RECEIPT_SHA.search(text)
     ref = RECEIPT_REF.search(text)
     bound = TARGET_TREE.search(text)
@@ -84,8 +93,7 @@ def receipt_binding(check, tree, reviewed):
             or bound.group(1) != reviewed):
         return None
     path = ref.group(1)
-    if (not path.startswith(EVIDENCE_ROOT) or path.startswith('/')
-            or '..' in path or not path.endswith('/receipt.json')):
+    if not canonical_evidence_ref(path, schema):
         return None
     return dict(external_id=external_id, receipt_ref=path,
                 target_tree_sha=bound.group(1), head_tree_sha=head.group(1),
@@ -148,10 +156,11 @@ def plan_draft(get, number, check_name, app_id):
     require(check.get('conclusion') == 'success', 'ansible-did-not-succeed')
     # A green alone is no longer enough: the GATE must have bound a real,
     # verified receipt to this exact reviewed tree. Absence holds the draft.
-    tree_entries = get(f'git/trees/{tree}').get('tree')
-    require(isinstance(tree_entries, list), 'ansible-head-tree-unreadable')
-    reviewed = reviewed_tree_sha(tree_entries)
-    receipt = receipt_binding(check, tree, reviewed)
+    tree_response = get(f'git/trees/{tree}')
+    tree_entries = tree_response.get('tree')
+    require(isinstance(tree_entries, list) and tree_response.get('truncated') is not True,
+            'ansible-head-tree-unreadable')
+    receipt = receipt_binding(check, tree, tree_entries)
     require(receipt is not None, 'ansible-receipt-not-bound')
     require(receipt['target_commit_sha'] == head_parents[0],
             'ansible-receipt-not-bound-to-reviewed-parent')

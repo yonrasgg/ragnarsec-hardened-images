@@ -20,6 +20,7 @@ MIGRATED = (
     'prepare-staging-draft.yml',
     # CI-004 corrective: untrusted half of the automatic-draft split.
     'staging-draft-merge-trigger.yml',
+    'publish-ansible-check.yml',
 )
 
 
@@ -29,9 +30,9 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
         reviewed = {
             'check-promotion-candidate.yml': '2192483f591dd4f587eba81bc99c84fdd9b0578f18db0365ddbc3255c328ef3a',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
-            'prepare-staging-draft.yml': '61a6c891b01a3d1efad1d590610eb3cab3731871cb536bad071c19448e456d2f',
+            'prepare-staging-draft.yml': '1cd4962b0c1e2c41197d79fa0acbd07fd35825911a641de16b1bb3e775dc7f26',
             'promotion-route-preflight.yml': '96332ab904393044443589a67569979a283a6076f0010cbd0cf5c71261517205',
-            'publish-ansible-check.yml': '28e73414e4e202c9aea34c5f0470d97d7b42e9ea48b12ba73ac0afd7e2bb03be',
+            'publish-ansible-check.yml': 'e9e73fad5094f36ac9dd2566a8790e2769f56d85dd0a4c2266892b6b58f7830f',
             'staging-draft-merge-trigger.yml': '904d30bc54ac515e11e659c4e8c630428950a1c6c43d2f75ee336b79c6ad3f5c',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
@@ -45,9 +46,21 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
         for name in MIGRATED:
             text = (workflows / name).read_text()
             self.assertNotIn('pull_request_target', text, name)
-        # The publisher gate was already on the untrusted event; CI-004 does
-        # not change it. Its own verifier tree is assessed separately (CI-008).
-        self.assertIn('  pull_request:', (workflows / 'publish-ansible-check.yml').read_text())
+
+    def test_ansible_publisher_resolves_the_pr_before_getting_the_app_token(self):
+        workflow = (suite.ROOT / '.github/workflows/publish-ansible-check.yml').read_text()
+        self.assertIn('  workflow_run:', workflow)
+        self.assertIn('workflows: ["Preflight the protected promotion route"]', workflow)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
+        self.assertIn('ref: ${{ github.sha }}', workflow)
+        self.assertIn('environment: ansible-ci', workflow)
+        self.assertIn('secrets.RAGNARSEC_ANSIBLE_PROTECTED_APP_PRIVATE_KEY', workflow)
+        self.assertIn('permission-checks: write', workflow)
+        self.assertNotIn('  pull_request:', workflow)
+        self.assertNotIn('download-artifact', workflow)
+        self.assertLess(workflow.index('tools/ansible_receipt_gate.py'),
+                        workflow.index('private-key:'))
+        self.assertIn('tools/resolve_ansible_check.py | cmp - "$binding"', workflow)
 
     def test_preflight_reads_signed_manifest_from_protected_base(self):
         # CI-004: `pull_request` runs in the untrusted PR context, so the
@@ -107,7 +120,8 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
                       workflow)
         self.assertIn('ref: refs/heads/main', workflow)
         self.assertIn('persist-credentials: false', workflow)
-        self.assertIn('secrets.RAGNARSEC_ANSIBLE_APP_PRIVATE_KEY', workflow)
+        self.assertIn('environment: ansible-ci', workflow)
+        self.assertIn('secrets.RAGNARSEC_ANSIBLE_PROTECTED_APP_PRIVATE_KEY', workflow)
         self.assertIn('steps.app-token.outputs.token', workflow)
         self.assertIn('pull-requests: write', workflow)
         self.assertIn("vars.RAGNARSEC_CREATE_STAGING_DRAFTS == 'true'", workflow)

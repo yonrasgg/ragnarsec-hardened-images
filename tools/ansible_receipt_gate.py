@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA = 'ragnarsec.validation-receipt/1.0'
+GIT_TREE_SCHEMA = 'ragnarsec.validation-receipt/1.1'
 SIGNATURE_NAMESPACE = 'ragnarsec-receipt-v1'
 EVIDENCE_ROOT = '40-Evidence/Audits/change-validation/'
 RECEIPT_PATH = 'receipts/ansible-validate.json'
@@ -93,13 +94,17 @@ def parse_time(value):
         return None
 
 
-def git_tree_sha(entries):
-    """Compute a Git tree object SHA-256... SHA-1 from flat API tree entries.
+def git_tree_sha(entries, *, schema=SCHEMA):
+    """Hash Git API entries with the serialization declared by the receipt.
 
     `entries` are the `tree` objects returned by GET /git/trees/{sha}: each
     has `path`, `mode`, `type` and `sha`. Nested paths are rebuilt into a
-    hierarchy and each tree object is hashed exactly as Git does.
+    hierarchy. Version 1.0 preserves the historic receipt serialization.
+    Version 1.1 serializes Git trees, including mode and directory ordering.
     """
+    if schema not in (SCHEMA, GIT_TREE_SCHEMA):
+        raise ValueError('unknown-tree-schema')
+    canonical = schema == GIT_TREE_SCHEMA
     root = {}
     for entry in entries:
         path = entry.get('path')
@@ -110,12 +115,21 @@ def git_tree_sha(entries):
             raise ValueError('malformed tree entry')
         node = root
         parts = path.split('/')
+        if canonical and any(part in ('', '.', '..') or '\0' in part for part in parts):
+            raise ValueError('invalid-tree-path')
         for part in parts[:-1]:
             node = node.setdefault(part, {})
             if not isinstance(node, dict):
                 raise ValueError('conflicting tree entry')
         if parts[-1] in node:
             raise ValueError('duplicate tree entry')
+        if canonical:
+            modes = {'tree': ('040000', '40000'), 'blob': ('100644', '100755', '120000'),
+                     'commit': ('160000',)}
+            if mode not in modes.get(kind, ()):
+                raise ValueError('invalid-tree-entry-mode')
+            if kind == 'tree':
+                mode = '40000'
         node[parts[-1]] = {'mode': str(mode), 'sha': sha,
                            'type': kind if kind in ('blob', 'tree', 'commit') else 'blob'}
 
@@ -124,13 +138,14 @@ def git_tree_sha(entries):
         for name, value in node.items():
             if isinstance(value, dict) and 'sha' not in value:
                 child_sha = build(value)
-                rendered.append((name + '/', '40000', child_sha))
+                rendered.append((name + '/', name if canonical else name + '/', '40000', child_sha))
             else:
-                rendered.append((name, value['mode'], value['sha']))
+                order = name + '/' if canonical and value['type'] == 'tree' else name
+                rendered.append((order, name, value['mode'], value['sha']))
         rendered.sort(key=lambda item: item[0].encode('utf-8'))
         payload = b''.join(
             f'{mode} {name}\0'.encode('utf-8') + bytes.fromhex(sha)
-            for name, mode, sha in rendered
+            for _, name, mode, sha in rendered
         )
         return hashlib.sha1(
             b'tree ' + str(len(payload)).encode('ascii') + b'\0' + payload
@@ -139,7 +154,7 @@ def git_tree_sha(entries):
     return build(root)
 
 
-def reviewed_tree_sha(head_tree_entries, receipt_path=RECEIPT_PATH):
+def reviewed_tree_sha(head_tree_entries, receipt_path=RECEIPT_PATH, *, schema=SCHEMA):
     """Head tree with the evidence path removed (the tree the validator saw).
 
     A receipt stored inside the tree it describes cannot bind to a tree that
@@ -150,7 +165,20 @@ def reviewed_tree_sha(head_tree_entries, receipt_path=RECEIPT_PATH):
     entries = [entry for entry in head_tree_entries
                if isinstance(entry, dict)
                and str(entry.get('path', '')).split('/')[0] != top]
-    return git_tree_sha(entries)
+    return git_tree_sha(entries, schema=schema)
+
+
+def canonical_evidence_ref(path, schema):
+    if not isinstance(path, str) or not path.startswith(EVIDENCE_ROOT):
+        return False
+    parts = path[len(EVIDENCE_ROOT):].split('/')
+    if len(parts) < 3 or any(
+        part in ('.', '..') or re.fullmatch(r'[A-Za-z0-9._-]+', part) is None for part in parts
+    ):
+        return False
+    if schema == GIT_TREE_SCHEMA:
+        return parts[-1] == 'SHA256SUMS.captures'
+    return schema == SCHEMA and parts[-1] in ('receipt.json', 'SHA256SUMS.captures')
 
 
 def verify_signature(payload, signature, identity, public_key):
@@ -253,8 +281,9 @@ def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entrie
             receipt = json.loads(raw)
         except (ValueError, UnicodeDecodeError):
             return fail(5, 'receipt-json-invalid')
-        if not isinstance(receipt, dict) or receipt.get('schema') != SCHEMA:
+        if not isinstance(receipt, dict) or receipt.get('schema') not in (SCHEMA, GIT_TREE_SCHEMA):
             return fail(5, 'schema-not-accepted')
+        schema = receipt['schema']
         required = ('run_id', 'target_tree_sha', 'target_commit_sha', 'commands',
                     'outputs_sha256', 'ansible_version', 'ansible_version_sha256',
                     'host_id', 'actor', 'observed_at', 'result', 'validation_profile',
@@ -312,7 +341,9 @@ def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entrie
             return fail(7, 'chain-predecessor-not-pinned')
 
         # Step 8 — exact tree binding.
-        bound_tree = reviewed_tree_sha(head_tree_entries, receipt_path)
+        if schema == GIT_TREE_SCHEMA and git_tree_sha(head_tree_entries, schema=schema) != expected_tree:
+            return fail(8, 'head-tree-mismatch')
+        bound_tree = reviewed_tree_sha(head_tree_entries, receipt_path, schema=schema)
         decision['reviewed_tree_sha'] = bound_tree
         if not _oid40(receipt.get('target_tree_sha')) or receipt['target_tree_sha'] != bound_tree:
             return fail(8, 'target-tree-mismatch')
@@ -359,6 +390,8 @@ def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entrie
         if any(not isinstance(ref, str) or not ref.startswith(EVIDENCE_ROOT)
                or '..' in ref or ref.startswith('/') for ref in refs):
             return fail(11, 'evidence-ref-not-allowlisted')
+        if not canonical_evidence_ref(refs[0], schema):
+            return fail(11, 'canonical-evidence-ref-required')
         if sha256_bytes(receipt['ansible_version'].encode('utf-8')) != receipt['ansible_version_sha256']:
             return fail(11, 'ansible-version-hash-mismatch')
 
@@ -417,6 +450,7 @@ def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entrie
         decision['text'] = '\n'.join([
             'Tree-bound Ansible validation receipt verified.',
             f'receipt_ref={refs[0]}',
+            f'receipt_schema={schema}',
             f'receipt_sha256={receipt_sha}',
             f'target_tree_sha={bound_tree}',
             f'head_tree_sha={head_tree_sha}',
@@ -454,9 +488,11 @@ def live_decision():
     try:
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
             raise RuntimeError('repository-not-allowlisted')
+        if not _oid40(head):
+            raise RuntimeError('head-not-allowlisted')
         commit = json.loads(_gh_json(f'repos/{repo}/git/commits/{head}', token))
         tree_sha = (commit.get('tree') or {}).get('sha')
-        if not _oid40(tree_sha):
+        if commit.get('sha') != head or not _oid40(tree_sha):
             raise RuntimeError('head-tree-unresolved')
         # The reviewed parent comes from the API commit object, never from an
         # env var or from receipt content. A merge/multi-parent head is refused.
@@ -467,7 +503,7 @@ def live_decision():
         parent_sha = parents[0]['sha']
         tree = json.loads(_gh_json(f'repos/{repo}/git/trees/{tree_sha}', token))
         entries = tree.get('tree')
-        if tree.get('truncated') is True or not isinstance(entries, list):
+        if tree.get('sha') != tree_sha or tree.get('truncated') is not False or not isinstance(entries, list):
             raise RuntimeError('head-tree-incomplete')
         content = json.loads(_gh_json(
             f'repos/{repo}/contents/{receipt_path}?ref={head}', token))

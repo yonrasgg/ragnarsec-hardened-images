@@ -235,8 +235,20 @@ def check(source, reviewed_head, reconcile=False, actions_change_id=None, action
             raise RouteUnavailable('checkout-does-not-match-live-base')
     git('fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', 'origin', *refs)
 
-    manifest = None
-    if reconcile:
+    args = [sys.executable, '-B', str(ROUTE), '--fix-head', head]
+    for name in BRANCHES:
+        args.extend(('--' + name, pins[prefix + name]))
+    run = subprocess.run(args, capture_output=True, text=True, timeout=240)
+    report = json.loads(run.stdout)
+    if report.get('merge_authorized') is not False or report.get('exit_code') != run.returncode:
+        raise RouteUnavailable('invalid-route-report')
+    if live(refs) != pins:
+        raise RouteUnavailable('live-refs-changed-during-route-check')
+
+    failed = report.get('phases', [])[-1:]
+    if (reconcile and run.returncode == 1 and failed
+            and failed[0].get('lane') == 'development-to-staging'
+            and failed[0].get('conflict_paths')):
         if reviewed_head is not None:
             pr = '' if manifest_pr is None else str(manifest_pr)
             trusted_pr = '' if actions_change_id is None else str(actions_change_id)
@@ -264,20 +276,7 @@ def check(source, reviewed_head, reconcile=False, actions_change_id=None, action
         if ancestry.returncode != 0:
             raise RouteUnavailable('manifest-reviewed-head-not-in-source')
         require_reconciliation_pins(manifest, pins, reviewed_source)
-
-    args = [sys.executable, '-B', str(ROUTE), '--fix-head', head]
-    for name in BRANCHES:
-        args.extend(('--' + name, pins[prefix + name]))
-    run = subprocess.run(args, capture_output=True, text=True, timeout=240)
-    report = json.loads(run.stdout)
-    if report.get('merge_authorized') is not False or report.get('exit_code') != run.returncode:
-        raise RouteUnavailable('invalid-route-report')
-    if live(refs) != pins:
-        raise RouteUnavailable('live-refs-changed-during-route-check')
-    if manifest is not None:
-        failed = report.get('phases', [])[-1:]
-        if (run.returncode != 1 or not failed or failed[0].get('lane') != 'development-to-staging'
-                or failed[0].get('conflict_paths') != manifest['conflict_paths']):
+        if failed[0]['conflict_paths'] != manifest['conflict_paths']:
             raise RouteUnavailable('unrecognized-direct-route-conflict')
         inputs = dict(manifest['bases'], fix_head=manifest['reviewed_head'])
         planned = plan_reconciliation('.', inputs, manifest['reviewed_tree'])

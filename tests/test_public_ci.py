@@ -757,9 +757,9 @@ class JenkinsBoundaries(unittest.TestCase):
         reviewed = {
             'check-promotion-candidate.yml': '2192483f591dd4f587eba81bc99c84fdd9b0578f18db0365ddbc3255c328ef3a',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
-            'prepare-staging-draft.yml': '61a6c891b01a3d1efad1d590610eb3cab3731871cb536bad071c19448e456d2f',
+            'prepare-staging-draft.yml': '1cd4962b0c1e2c41197d79fa0acbd07fd35825911a641de16b1bb3e775dc7f26',
             'promotion-route-preflight.yml': '96332ab904393044443589a67569979a283a6076f0010cbd0cf5c71261517205',
-            'publish-ansible-check.yml': '28e73414e4e202c9aea34c5f0470d97d7b42e9ea48b12ba73ac0afd7e2bb03be',
+            'publish-ansible-check.yml': 'e9e73fad5094f36ac9dd2566a8790e2769f56d85dd0a4c2266892b6b58f7830f',
             'staging-draft-merge-trigger.yml': '904d30bc54ac515e11e659c4e8c630428950a1c6c43d2f75ee336b79c6ad3f5c',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))

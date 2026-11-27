@@ -10,9 +10,9 @@ from unittest.mock import patch
 from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from ansible_receipt_gate import reviewed_tree_sha
+from ansible_receipt_gate import GIT_TREE_SCHEMA, git_tree_sha, reviewed_tree_sha
 from prepare_staging_draft import (
-    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft, run,
+    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft, receipt_binding, run,
 )
 
 
@@ -169,6 +169,22 @@ class StagingDraftTests(unittest.TestCase):
         finally:
             check['output']['text'] = original
         self.assertFalse(self.posts)
+
+    def test_consumes_the_canonical_capture_reference_in_both_receipt_versions(self):
+        check = self.data[self.checks]['check_runs'][0]
+        reference = self.receipt_ref.replace('receipt.json', 'SHA256SUMS.captures')
+        check['output']['text'] = self.receipt_text.replace(self.receipt_ref, reference)
+        self.assertEqual(self.plan()['ansible_receipt_ref'], reference)
+
+        canonical = git_tree_sha(self.tree_entries, schema=GIT_TREE_SCHEMA)
+        reviewed = reviewed_tree_sha(self.tree_entries, schema=GIT_TREE_SCHEMA)
+        check['output']['text'] = check['output']['text'].replace(
+            f'head_tree_sha={self.tree}', f'head_tree_sha={canonical}').replace(
+            f'target_tree_sha={self.reviewed_tree}', f'target_tree_sha={reviewed}')
+        check['output']['text'] += f'\nreceipt_schema={GIT_TREE_SCHEMA}'
+        self.assertEqual(receipt_binding(check, canonical, self.tree_entries)['receipt_ref'], reference)
+        check['output']['text'] = check['output']['text'].replace(reference, self.receipt_ref)
+        self.assertIsNone(receipt_binding(check, canonical, self.tree_entries))
 
     def test_invalid_receipt_hash_or_unallowlisted_ref_holds_the_draft(self):
         check = self.data[self.checks]['check_runs'][0]
