@@ -815,6 +815,20 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('require_one_time_sync "$head" staging',provenance)
         self.assertIn('require_one_time_sync "$head" main',provenance)
 
+    def test_post_pr255_reconciliation_uses_scoped_syncs(self):
+        provenance = self.pipeline.split("stage('Provenance')", 1)[1].split("stage('Contract')", 1)[0]
+        for branch, target, target_base, source, source_parent in (
+            ('sync/development-to-staging-post-pr255-20261127', 'staging',
+             'e5b1d84b2c7f8de69016b56a94a2a24116201c71', 'development',
+             'bab5a1b16d3695779bc0fcca9baef32f537d9003'),
+            ('sync/staging-to-main-post-pr255-20261127', 'main',
+             '57bec7ffc5aa4baf87dfbf333d3b087c5b2befea', 'staging',
+             'e5b1d84b2c7f8de69016b56a94a2a24116201c71'),
+        ):
+            block = provenance.split(f'elif [ "$source" = "{branch}" ]; then', 1)[1].split('else', 1)[0]
+            self.assertIn(f'require_scoped_sync "$head" {target} {target_base}', block)
+            self.assertIn(f'{source} {source_parent}', block)
+
     def test_development_is_plan_only(self):
         plan=self.pipeline.split("stage('Plan')",1)[1].split("stage('Validate')",1)[0]
         self.assertIn('image_ci.py plan',plan)
