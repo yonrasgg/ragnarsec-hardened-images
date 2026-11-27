@@ -12,12 +12,12 @@
         "/usr/bin/ansible-playbook",
         "--version"
       ],
-      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261127T171007Z-wgdashboard-c1c2.ViSUy5xu/wgdashboard",
-      "finished_at": "2026-11-27T17:10:09Z",
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261127T174813Z-wgdashboard-pr252-c1c2.QSePpgLb/wgdashboard",
+      "finished_at": "2026-11-27T17:48:15Z",
       "id": "C1",
       "owner_gate": false,
       "rc": 0,
-      "started_at": "2026-11-27T17:10:08Z",
+      "started_at": "2026-11-27T17:48:14Z",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stdout_sha256": "3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c",
       "sudo_required": false
@@ -27,37 +27,36 @@
         "/usr/bin/ansible-playbook",
         "--syntax-check",
         "-i",
-        "/home/userone/ragnarsec-optionc-pilot/20261127T171007Z-wgdashboard-c1c2.ViSUy5xu/inputs/sandbox-inventory.template.ini",
-        "/home/userone/ragnarsec-optionc-pilot/20261127T171007Z-wgdashboard-c1c2.ViSUy5xu/inputs/batch-all-services.yml",
+        "/home/userone/ragnarsec-optionc-pilot/20261127T174813Z-wgdashboard-pr252-c1c2.QSePpgLb/inputs/sandbox-inventory.template.ini",
+        "/home/userone/ragnarsec-optionc-pilot/20261127T174813Z-wgdashboard-pr252-c1c2.QSePpgLb/inputs/batch-all-services.yml",
         "-e",
-        "@/home/userone/ragnarsec-optionc-pilot/20261127T171007Z-wgdashboard-c1c2.ViSUy5xu/inputs/batch-services-41.yml",
+        "@/home/userone/ragnarsec-optionc-pilot/20261127T174813Z-wgdashboard-pr252-c1c2.QSePpgLb/inputs/batch-services-41.yml",
         "-e",
         "batch_publish=false"
       ],
-      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261127T171007Z-wgdashboard-c1c2.ViSUy5xu/wgdashboard",
-      "finished_at": "2026-11-27T17:10:10Z",
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261127T174813Z-wgdashboard-pr252-c1c2.QSePpgLb/wgdashboard",
+      "finished_at": "2026-11-27T17:48:16Z",
       "id": "C2",
       "owner_gate": false,
       "rc": 0,
-      "started_at": "2026-11-27T17:10:09Z",
+      "started_at": "2026-11-27T17:48:15Z",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "166588fac698cba167e8c185188c6fdd29cdcd3da42cfef9bb101a7fc841fb50",
+      "stdout_sha256": "eab90d3215bcc141e68790d15534d74821623c021415f7270d8a42d2133d814f",
       "sudo_required": false
     }
   ],
   "evidence_refs": [
-    "40-Evidence/Audits/change-validation/heimdall/20261127T171008Z-r2-syntax-wgdashboard-ca9e7358/SHA256SUMS.captures"
+    "40-Evidence/Audits/change-validation/heimdall/20261127T174814Z-r2-syntax-wgdashboard-255bf504/SHA256SUMS.captures"
   ],
   "host_id": "heimdall",
   "inventory_sha": "f2939ab3a79db96dc30fd2e116ac7a426ce315274609b741f1efee034151f1b3",
-  "observed_at": "2026-11-27T17:10:10Z",
-  "outputs_sha256": "475ab783da3dc5fa8439bddc5a4a1d1c7412cf11f0acc7f62b19fa2d6f796de2",
+  "observed_at": "2026-11-27T17:48:16Z",
+  "outputs_sha256": "460645710697ac156f72d8679b39e1b19f730b82f4224b777a212198aedde25c",
   "owner_gates": [],
   "playbook_sha": "c3a2f81f39eb75f4ad29e43b13cb97b4be27db5f1ab8107634df0459236069c4",
   "result": "pass",
-  "run_id": "20261127T171008Z-r2-syntax-wgdashboard-ca9e7358",
+  "run_id": "20261127T174814Z-r2-syntax-wgdashboard-255bf504",
   "schema": "ragnarsec.validation-receipt/1.0",
-  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABAqi0e6o4tH5iiwDOV4ByKOpf+N/DbpghowrqvXDv8R/\n5wyFQPQIh097eSqYRouIMpUoesuTHdGyYOIX+ICC+1AA==\n-----END SSH SIGNATURE-----\n",
   "signer": {
     "identity": "heimdall:userone",
     "key_id": "heimdall-userone-pilot-ed25519",
@@ -65,13 +64,14 @@
     "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiv/sPquJD3nPifYbSsKvzBvT0fiH0SdCtJ0Qm0S3n6 ragnarsec-receipt-signer@heimdall\n"
   },
   "sudo_required": false,
-  "target_commit_sha": "ca9e735896075ccff8ecf309207bafa0a4ea669f",
-  "target_tree_sha": "640e9348d1ca754de1d9677817134fcba57f9ab2",
+  "target_commit_sha": "255bf504d554d3c97f15073218cb7dd55bf389ce",
+  "target_tree_sha": "a0de7eecb289df292723fc6e4a329c03c549208f",
   "tree_assertion": {
-    "expected": "640e9348d1ca754de1d9677817134fcba57f9ab2",
+    "expected": "a0de7eecb289df292723fc6e4a329c03c549208f",
     "match": true,
     "method": "authenticated-heimdall-git-bundle-exact-parent-and-gate-tree",
-    "observed": "640e9348d1ca754de1d9677817134fcba57f9ab2"
+    "observed": "a0de7eecb289df292723fc6e4a329c03c549208f"
   },
-  "validation_profile": "syntax-v1"
+  "validation_profile": "syntax-v1",
+  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABAAaowvBXk5oGxQ38PEL6ZDA+V1mIjTou4Ey3KZlwifm\nKNMHliLeMugNDZ6ptctxWTpwrzxBx2+CLzNM0bC3hVBQ==\n-----END SSH SIGNATURE-----\n"
 }
