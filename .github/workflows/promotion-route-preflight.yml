@@ -1,7 +1,17 @@
 name: Preflight the protected promotion route
 
+# Trust boundary (CI-004, post-migration):
+#   * Trigger is ordinary `pull_request` in this repository. The run executes in
+#     the untrusted PR context: GITHUB_TOKEN is read-only and no secret is read.
+#   * The verifier (tools/jenkins_promotion_route.py and its helpers) is taken
+#     ONLY from the protected base checkout below. The default actions/checkout
+#     ref for `pull_request` is the PR merge commit and MUST NOT be used here.
+#   * The PR is DATA, never code: head.ref / head.sha / base.sha / number are
+#     validated event fields, and the signed manifest is read from the fetched
+#     PR object by SHA (`git show <head>:<path>`), never from the working tree.
+#   * Verdicts stay advisory: merge_authorized=false, no write token, no draft.
 "on":
-  pull_request_target:
+  pull_request:
     branches: [development]
     types: [opened, reopened, synchronize, ready_for_review]
 
@@ -19,7 +29,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
-      - name: Verify the source and protected target
+      - name: Validate trusted event data before any ref or manifest work
         shell: bash
         env:
           SOURCE_REPO: ${{ github.event.pull_request.head.repo.full_name }}
@@ -27,11 +37,16 @@ jobs:
           BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
           BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           [[ "$SOURCE_REPO" == "$GITHUB_REPOSITORY" && "$SOURCE_BRANCH" == fix/* ]]
           [[ "$BASE_REPO" == "$GITHUB_REPOSITORY" && "$BASE_BRANCH" == development ]]
           [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+      # Explicit protected-base checkout: on `pull_request` the default ref is
+      # the PR merge commit, which would put PR-controlled code in the verifier.
+      # The evaluator additionally requires HEAD == live development tip.
       - name: Check out protected policy, never PR code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -43,6 +58,12 @@ jobs:
         env:
           SOURCE_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          python3 -B tools/jenkins_promotion_route.py --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA"
+          set -- --source "$SOURCE_BRANCH" --reviewed-head "$PR_HEAD_SHA" \
+            --change-id "$PR_NUMBER" --repo "$REPO" \
+            --pr "$PR_NUMBER" --manifest-from-pr "$PR_HEAD_SHA" \
+            --allow-manifest-reconciliation
+          python3 -B tools/jenkins_promotion_route.py "$@"

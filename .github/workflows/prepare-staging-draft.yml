@@ -1,15 +1,34 @@
 name: Prepare the human staging draft
 
+# Trust boundary (CI-004 corrective draft, 2026-11-26):
+#   * This file mints an installation token and POSTs /pulls, so it is NEVER
+#     triggered by any PR event: for those events GitHub takes the workflow
+#     definition from the PR ref, which would put the App private key in
+#     PR-controlled code. Its workflow file is taken only
+#     from the protected default branch (workflow_run uses the default-branch
+#     file; workflow_dispatch is an owner action on main).
+#   * Draft creation is AUTOMATIC on a qualifying merge. The trigger is split:
+#     staging-draft-merge-trigger.yml runs on `pull_request:[closed]` with a
+#     read-only token and NO secrets, and only emits a GitHub-signed
+#     `workflow_run` completion event. This workflow derives `integrated_pr`
+#     from GitHub-populated metadata (or an API lookup keyed by the signed
+#     head_sha), never from the untrusted run's outputs.
+#   * plan_draft() re-validates the whole PR through the read-only API before
+#     the draft job acts. GITHUB_TOKEN stays read-only in preflight; the App
+#     token exists only in the draft job and is used solely for the draft POST.
+#   * The human gate is the SQUASH: the POST creates `draft: true`, a human
+#     marks it ready and squashes. Publication stays a separate, manually
+#     approved Jenkins stage. All merge authority stays with the human.
 "on":
-  pull_request_target:
-    branches: [development]
-    types: [closed]
   workflow_dispatch:
     inputs:
       integrated_pr:
         description: The last Ansible-qualified PR already squashed into development
         required: true
         type: string
+  workflow_run:
+    workflows: ["Staging draft merge trigger"]
+    types: [completed]
 
 permissions: {}
 
@@ -18,11 +37,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve-integrated-pr:
+    if: github.repository == 'yonrasgg/ragnarsec-hardened-images'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.resolve.outputs.number }}
+    steps:
+      - id: resolve
+        name: Derive the PR number from trusted data only
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PR: ${{ github.event.inputs.integrated_pr }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_HEAD_REPO_ID: ${{ github.event.workflow_run.head_repository.id }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          value=''
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            value="$DISPATCH_PR"
+          elif [[ "$EVENT_NAME" == 'workflow_run' ]]; then
+            # The trigger workflow ran in the untrusted PR context. NONE of its
+            # outputs are trusted here. Only GitHub-populated workflow_run
+            # metadata is read, and the referenced PR is fully re-validated by
+            # tools/prepare_staging_draft.py::plan_draft in the preflight job.
+            [[ "$RUN_EVENT" == 'pull_request' ]]
+            [[ "$RUN_HEAD_REPO_ID" == '1426336836' ]]
+            [[ "$RUN_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+            value="$RUN_PR_NUMBER"
+            if [[ -z "$value" ]]; then
+              # GitHub can omit pull_requests[] on workflow_run. Fall back to
+              # the API keyed by the GitHub-signed head_sha (trusted data),
+              # requiring exactly one merged fix -> development PR.
+              gh api --hostname github.com --method GET \
+                "repos/yonrasgg/ragnarsec-hardened-images/commits/${RUN_HEAD_SHA}/pulls" \
+                --jq '.' > "$RUNNER_TEMP/associated.json"
+              value="$(jq -er --arg head "$RUN_HEAD_SHA" '
+                [.[] | select(.state == "closed" and .merged_at != null
+                  and .base.ref == "development" and .head.sha == $head
+                  and .head.repo.id == 1426336836)]
+                | select(length == 1) | .[0].number
+              ' "$RUNNER_TEMP/associated.json")"
+            fi
+          else
+            echo 'ignored-event' >&2
+            exit 1
+          fi
+          [[ "$value" =~ ^[1-9][0-9]{0,9}$ ]]
+          printf 'number=%s\n' "$value" >> "$GITHUB_OUTPUT"
+
   preflight:
+    needs: resolve-integrated-pr
     if: >-
       github.repository == 'yonrasgg/ragnarsec-hardened-images' &&
-      ((github.event_name == 'pull_request_target' && github.event.pull_request.merged == true) ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+      needs.resolve-integrated-pr.outputs.number != '' &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     permissions:
       contents: read
       pull-requests: read
@@ -39,9 +117,10 @@ jobs:
           ref: refs/heads/main
           persist-credentials: false
       - id: plan
-        name: Verify the integrated Ansible proof
+        name: Verify the integrated Ansible proof (read-only)
         env:
           GH_TOKEN: ${{ github.token }}
+          INTEGRATED_PR: ${{ needs.resolve-integrated-pr.outputs.number }}
           ANSIBLE_APP_ID: ${{ vars.RAGNARSEC_ANSIBLE_APP_ID }}
           ANSIBLE_CHECK_NAME: ${{ vars.RAGNARSEC_ANSIBLE_CHECK_NAME }}
         run: |
@@ -50,23 +129,40 @@ jobs:
           python3 -B tools/prepare_staging_draft.py
 
   draft-for-human:
-    needs: preflight
-    if: needs.preflight.outputs.plan != '' && vars.RAGNARSEC_CREATE_STAGING_DRAFTS == 'true'
+    needs: [resolve-integrated-pr, preflight]
+    if: >-
+      needs.preflight.outputs.plan != '' &&
+      vars.RAGNARSEC_CREATE_STAGING_DRAFTS == 'true'
     permissions:
       contents: read
-      pull-requests: write
-      checks: read
     runs-on: ubuntu-24.04
     timeout-minutes: 3
+    environment: ansible-ci
     steps:
       - name: Check out the same protected policy revision
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ needs.preflight.outputs.policy }}
           persist-credentials: false
+      # POST /repos/{owner}/{repo}/pulls needs an installation access token
+      # carrying "Pull requests" repository permission (write). GITHUB_TOKEN is
+      # refused with HTTP 403 when "Allow GitHub Actions to create and approve
+      # pull requests" is off, so the draft is created with the trusted App.
+      - name: Create the GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0 (v3)
+        with:
+          app-id: '5929884'
+          private-key: ${{ secrets.RAGNARSEC_ANSIBLE_PROTECTED_APP_PRIVATE_KEY }}
+          owner: yonrasgg
+          repositories: ragnarsec-hardened-images
+          permission-checks: read
+          permission-contents: read
+          permission-pull-requests: write
       - name: Recheck and create only a draft
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          INTEGRATED_PR: ${{ needs.resolve-integrated-pr.outputs.number }}
           ANSIBLE_APP_ID: ${{ vars.RAGNARSEC_ANSIBLE_APP_ID }}
           ANSIBLE_CHECK_NAME: ${{ vars.RAGNARSEC_ANSIBLE_CHECK_NAME }}
           CREATE_STAGING_DRAFTS: ${{ vars.RAGNARSEC_CREATE_STAGING_DRAFTS }}

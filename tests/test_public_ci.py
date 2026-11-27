@@ -755,8 +755,12 @@ class JenkinsBoundaries(unittest.TestCase):
         # Any workflow change requires an explicit boundary review. Jenkins
         # remains independent; Actions may read only the protected policy.
         reviewed = {
+            'check-promotion-candidate.yml': '2192483f591dd4f587eba81bc99c84fdd9b0578f18db0365ddbc3255c328ef3a',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
-            'promotion-route-preflight.yml': '85ae25042bed4bc1cc81f058b69a557a1e98a1ba2abefae3ddafb82f7e722ae7',
+            'prepare-staging-draft.yml': '1cd4962b0c1e2c41197d79fa0acbd07fd35825911a641de16b1bb3e775dc7f26',
+            'promotion-route-preflight.yml': '96332ab904393044443589a67569979a283a6076f0010cbd0cf5c71261517205',
+            'publish-ansible-check.yml': '50350767e9bb71a66a95647486c25a7912c1badf09e081eb83cf468a3ad48352',
+            'staging-draft-merge-trigger.yml': '904d30bc54ac515e11e659c4e8c630428950a1c6c43d2f75ee336b79c6ad3f5c',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
         for name, digest in reviewed.items():
@@ -810,6 +814,20 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('origin/${source_branch}^{tree}',provenance)
         self.assertIn('require_one_time_sync "$head" staging',provenance)
         self.assertIn('require_one_time_sync "$head" main',provenance)
+
+    def test_post_pr255_reconciliation_uses_scoped_syncs(self):
+        provenance = self.pipeline.split("stage('Provenance')", 1)[1].split("stage('Contract')", 1)[0]
+        for branch, target, target_base, source, source_parent in (
+            ('sync/development-to-staging-post-pr255-20261127', 'staging',
+             'e5b1d84b2c7f8de69016b56a94a2a24116201c71', 'development',
+             'bab5a1b16d3695779bc0fcca9baef32f537d9003'),
+            ('sync/staging-to-main-post-pr255-20261127', 'main',
+             '57bec7ffc5aa4baf87dfbf333d3b087c5b2befea', 'staging',
+             'e5b1d84b2c7f8de69016b56a94a2a24116201c71'),
+        ):
+            block = provenance.split(f'elif [ "$source" = "{branch}" ]; then', 1)[1].split('else', 1)[0]
+            self.assertIn(f'require_scoped_sync "$head" {target} {target_base}', block)
+            self.assertIn(f'{source} {source_parent}', block)
 
     def test_development_is_plan_only(self):
         plan=self.pipeline.split("stage('Plan')",1)[1].split("stage('Validate')",1)[0]
