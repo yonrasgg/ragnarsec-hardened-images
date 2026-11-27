@@ -32,7 +32,7 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
             'prepare-staging-draft.yml': '1cd4962b0c1e2c41197d79fa0acbd07fd35825911a641de16b1bb3e775dc7f26',
             'promotion-route-preflight.yml': '96332ab904393044443589a67569979a283a6076f0010cbd0cf5c71261517205',
-            'publish-ansible-check.yml': 'e9e73fad5094f36ac9dd2566a8790e2769f56d85dd0a4c2266892b6b58f7830f',
+            'publish-ansible-check.yml': '50350767e9bb71a66a95647486c25a7912c1badf09e081eb83cf468a3ad48352',
             'staging-draft-merge-trigger.yml': '904d30bc54ac515e11e659c4e8c630428950a1c6c43d2f75ee336b79c6ad3f5c',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
@@ -61,6 +61,13 @@ class JenkinsBoundaries(suite.JenkinsBoundaries):
         self.assertLess(workflow.index('tools/ansible_receipt_gate.py'),
                         workflow.index('private-key:'))
         self.assertIn('tools/resolve_ansible_check.py | cmp - "$binding"', workflow)
+
+    def test_ansible_publisher_queues_multiple_pending_runs(self):
+        workflow = (suite.ROOT / '.github/workflows/publish-ansible-check.yml').read_text()
+        concurrency = workflow.split('\nconcurrency:\n', 1)[1].split('\n\n', 1)[0]
+        self.assertIn('  group: ansible-check-publisher\n', concurrency)
+        self.assertIn('  queue: max\n', concurrency)
+        self.assertIn('  cancel-in-progress: false', concurrency)
 
     def test_preflight_reads_signed_manifest_from_protected_base(self):
         # CI-004: `pull_request` runs in the untrusted PR context, so the
