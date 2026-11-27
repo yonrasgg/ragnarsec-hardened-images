@@ -242,6 +242,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-wgdashboard-20261127" ]; then
                     require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
                       development 5207978c8f529e8ca123c1af104538446bd17ed5
+                  elif [ "$source" = "sync/development-to-staging-post-pr255-20261127" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development bab5a1b16d3695779bc0fcca9baef32f537d9003
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -275,6 +278,9 @@ pipeline {
                     require_scoped_sync "$head" main 6abfb7aed7287c43a920427c170d26b8e4dfe76d \
                       staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e
                   elif [ "$source" = "sync/staging-to-main-manifest-aware-20261126" ]; then
+                    require_scoped_sync "$head" main 57bec7ffc5aa4baf87dfbf333d3b087c5b2befea \
+                      staging e5b1d84b2c7f8de69016b56a94a2a24116201c71
+                  elif [ "$source" = "sync/staging-to-main-post-pr255-20261127" ]; then
                     require_scoped_sync "$head" main 57bec7ffc5aa4baf87dfbf333d3b087c5b2befea \
                       staging e5b1d84b2c7f8de69016b56a94a2a24116201c71
                   else
