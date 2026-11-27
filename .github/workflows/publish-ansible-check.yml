@@ -14,7 +14,9 @@ permissions:
   pull-requests: read
 
 concurrency:
+  # Keep check creation serialized while retaining queued runs for other PRs.
   group: ansible-check-publisher
+  queue: max
   cancel-in-progress: false
 
 jobs:
