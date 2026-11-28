@@ -187,6 +187,12 @@ Ansible check output must contain `pr=<number>;base=<sha>;head=<sha>` on the
 reviewed head and complete before its squash. The workflow does not generate
 or attest this proof itself. Existing staging PRs are left untouched.
 
+For new receipt histories, add `receipts/ansible/<reviewed-parent-sha>.json`
+in a commit whose only change is that signed receipt. The verifier derives the
+path from the exact parent and checks that removing the file reconstructs the
+parent tree, including previously recorded receipts. The legacy singleton
+layout remains supported on commits that predate the versioned directory.
+
 Before promotion, also run `python3 tools/publication_guard.py . --history`
 against a complete checkout. Deleting an internal file at the tip is insufficient
 if it remains in the history being published. A shallow checkout cannot pass

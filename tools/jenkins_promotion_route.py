@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 
+from ansible_receipt_gate import RECEIPT_PATH, VERSIONED_RECEIPTS, versioned_receipt_path
 from promotion_route import OID, PreflightError, Repository, RouteConflict
 
 
@@ -187,14 +188,21 @@ def require_reconciliation_candidate(manifest, head):
     Receipt authenticity remains the responsibility of the independent Ansible
     gate; this check never treats an allowed path as an accepted receipt.
     """
-    allowed = {
-        f"{MANIFEST_DIR}/{MANIFEST_NAME.format(pr=manifest['pr'])}",
-        'receipts/ansible-validate.json',
-    }
-    changed = git('diff', '--no-ext-diff', '--no-textconv', '--no-renames',
-                  '--ignore-submodules=none', '--name-only', '-z',
-                  manifest['reviewed_head'], head, '--')
-    if any(path not in allowed for path in changed.split('\0') if path):
+    manifest_path = f"{MANIFEST_DIR}/{MANIFEST_NAME.format(pr=manifest['pr'])}"
+    diff = git('diff', '--no-ext-diff', '--no-textconv', '--no-renames',
+               '--ignore-submodules=none', '--name-only', '-z',
+               manifest['reviewed_head'], head, '--')
+    changed = set(filter(None, diff.split('\0')))
+    receipt_path = RECEIPT_PATH
+    if any(path.startswith(f'{VERSIONED_RECEIPTS}/') for path in changed):
+        parents = git('rev-list', '--parents', '-n', '1', head).split()
+        if len(parents) != 2 or parents[0] != head or not OID.fullmatch(parents[1]):
+            raise RouteUnavailable('reconciliation-receipt-parent-invalid')
+        receipt_path = versioned_receipt_path(parents[1])
+        if receipt_path not in changed or git('ls-tree', '-z', parents[1], '--', receipt_path):
+            raise RouteUnavailable('reconciliation-receipt-not-new-for-parent')
+    allowed = {manifest_path, receipt_path}
+    if not changed <= allowed:
         raise RouteUnavailable('reconciliation-unreviewed-candidate-files')
     # Read Git objects, not checkout paths. Both metadata files must remain
     # regular, non-executable blobs; deletion, symlinks and gitlinks fail closed.

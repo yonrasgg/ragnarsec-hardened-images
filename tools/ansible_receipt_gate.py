@@ -27,6 +27,7 @@ GIT_TREE_SCHEMA = 'ragnarsec.validation-receipt/1.1'
 SIGNATURE_NAMESPACE = 'ragnarsec-receipt-v1'
 EVIDENCE_ROOT = '40-Evidence/Audits/change-validation/'
 RECEIPT_PATH = 'receipts/ansible-validate.json'
+VERSIONED_RECEIPTS = 'receipts/ansible'
 REQUIRED_COMMANDS = {'syntax-v1': ('C1', 'C2')}
 MAX_AGE_SECONDS = 7 * 24 * 3600
 GENESIS = '0' * 64
@@ -168,6 +169,51 @@ def reviewed_tree_sha(head_tree_entries, receipt_path=RECEIPT_PATH, *, schema=SC
     return git_tree_sha(entries, schema=schema)
 
 
+def versioned_receipt_path(parent_sha):
+    if not _oid40(parent_sha):
+        raise ValueError('invalid-receipt-parent')
+    return f'{VERSIONED_RECEIPTS}/{parent_sha}.json'
+
+
+def _without_receipt(entries, parts, read_tree):
+    entry = next((row for row in entries if row.get('path') == parts[0]), None)
+    if entry is None:
+        return None
+    remaining = [row for row in entries if row is not entry]
+    if len(parts) == 1:
+        if entry.get('type') != 'blob' or entry.get('mode') != '100644':
+            raise Reject(3, 'versioned-receipt-not-regular')
+        return remaining, entry['sha']
+    if entry.get('type') != 'tree' or entry.get('mode') not in ('40000', '040000'):
+        raise Reject(3, 'versioned-receipt-directory-not-regular')
+    child = _without_receipt(read_tree(entry['sha']), parts[1:], read_tree)
+    if child is None:
+        return None
+    child_entries, receipt_blob = child
+    if child_entries:
+        remaining.append(dict(entry, sha=git_tree_sha(child_entries, schema=GIT_TREE_SCHEMA)))
+    return remaining, receipt_blob
+
+
+def resolve_receipt_path(entries, parent_sha, read_tree, read_parent_tree_sha):
+    """Select one new regular receipt, or keep the historical singleton path."""
+    versioned = versioned_receipt_path(parent_sha)
+    change = _without_receipt(entries, versioned.split('/'), read_tree)
+    if change is None:
+        for tree in (entries, read_tree(read_parent_tree_sha())):
+            receipts = next((row for row in tree if row.get('path') == 'receipts'), None)
+            if receipts and receipts.get('type') == 'tree' and any(
+                    row.get('path') == 'ansible' for row in read_tree(receipts['sha'])):
+                raise Reject(3, 'versioned-receipt-for-parent-required')
+        return RECEIPT_PATH, None
+    remaining, receipt_blob = change
+    # Removing only the new path must reconstruct the entire reviewed parent,
+    # including all previous receipts and file modes.
+    if git_tree_sha(remaining, schema=GIT_TREE_SCHEMA) != read_parent_tree_sha():
+        raise Reject(3, 'versioned-receipt-not-sole-addition')
+    return versioned, receipt_blob
+
+
 def canonical_evidence_ref(path, schema):
     if not isinstance(path, str) or not path.startswith(EVIDENCE_ROOT):
         return False
@@ -220,7 +266,7 @@ def verify_signature(payload, signature, identity, public_key):
 
 def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entries,
                    trust=None, now=None, repo=None,
-                   receipt_path=RECEIPT_PATH,
+                   receipt_path=RECEIPT_PATH, versioned_addition=False,
                    max_age_seconds=MAX_AGE_SECONDS):
     """Verify a receipt byte-for-byte, fail-closed, in ordered steps.
 
@@ -232,7 +278,8 @@ def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entrie
     validates cannot bind to the hash of the commit that contains it, so the
     binding is to the reviewed parent instead (two-commit design). Tree
     binding, signature, registry, freshness, hashes and result checks are
-    unchanged. Returns a decision dict; `ok` only after every step passes.
+    unchanged. For a versioned path the caller must first establish the
+    append-only relation to the exact parent. Returns a decision dict.
     """
     trust = trust if trust is not None else TRUST
     now = now if now is not None else datetime.now(timezone.utc)
@@ -268,8 +315,9 @@ def verify_receipt(raw, *, head_sha, parent_sha, head_tree_sha, head_tree_entrie
         # Step 2 — expected tree resolved from the PR head by the caller.
         expected_tree = head_tree_sha
 
-        # Step 3 — receipt path must be the single allowlisted path.
-        if receipt_path != RECEIPT_PATH:
+        # Step 3 — allow the historic path or the verified append for this parent.
+        if receipt_path != RECEIPT_PATH and not (
+                versioned_addition is True and receipt_path == versioned_receipt_path(parent_sha)):
             return fail(3, 'receipt-path-not-allowlisted')
 
         # Step 4 — receipt bytes already fetched; hash them.
@@ -483,7 +531,6 @@ def live_decision():
     repo = os.environ.get('REPOSITORY', '')
     head = os.environ.get('HEAD_SHA', '')
     token = os.environ.get('GH_TOKEN') or os.environ.get('APP_TOKEN')
-    receipt_path = os.environ.get('RECEIPT_PATH', RECEIPT_PATH)
     now = datetime.now(timezone.utc)
     try:
         if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
@@ -501,31 +548,56 @@ def live_decision():
                 or not _oid40(parents[0].get('sha'))):
             raise RuntimeError('head-parent-not-single')
         parent_sha = parents[0]['sha']
-        tree = json.loads(_gh_json(f'repos/{repo}/git/trees/{tree_sha}', token))
-        entries = tree.get('tree')
-        if tree.get('sha') != tree_sha or tree.get('truncated') is not False or not isinstance(entries, list):
-            raise RuntimeError('head-tree-incomplete')
+        def read_tree(sha):
+            if not _oid40(sha):
+                raise RuntimeError('tree-sha-invalid')
+            tree = json.loads(_gh_json(f'repos/{repo}/git/trees/{sha}', token))
+            entries = tree.get('tree')
+            if (tree.get('sha') != sha or tree.get('truncated') is not False
+                    or not isinstance(entries, list)
+                    or git_tree_sha(entries, schema=GIT_TREE_SCHEMA) != sha):
+                raise RuntimeError('tree-unverified')
+            return entries
+
+        def read_parent_tree_sha():
+            parent = json.loads(_gh_json(f'repos/{repo}/git/commits/{parent_sha}', token))
+            parent_tree = (parent.get('tree') or {}).get('sha')
+            if parent.get('sha') != parent_sha or not _oid40(parent_tree):
+                raise RuntimeError('reviewed-parent-tree-unresolved')
+            return parent_tree
+
+        entries = read_tree(tree_sha)
+        receipt_path, blob = resolve_receipt_path(entries, parent_sha, read_tree, read_parent_tree_sha)
+        requested_path = os.environ.get('RECEIPT_PATH')
+        if requested_path is not None and requested_path != receipt_path:
+            raise Reject(3, 'receipt-path-does-not-match-tree')
         content = json.loads(_gh_json(
             f'repos/{repo}/contents/{receipt_path}?ref={head}', token))
         if content.get('encoding') != 'base64' or not isinstance(content.get('content'), str):
             raise RuntimeError('receipt-encoding-invalid')
         import base64
         raw = base64.b64decode(''.join(content['content'].split()), validate=True)
+        if blob is not None:
+            blob_bytes = str(len(raw)).encode('ascii') + b'\0' + raw
+            if (content.get('sha') != blob or content.get('type') != 'file'
+                    or hashlib.sha1(b'blob ' + blob_bytes).hexdigest() != blob):
+                raise Reject(3, 'versioned-receipt-blob-mismatch')
         return verify_receipt(raw, head_sha=head, parent_sha=parent_sha,
                               head_tree_sha=tree_sha, head_tree_entries=entries,
-                              trust=TRUST, now=now,
-                              repo=repo, receipt_path=receipt_path)
+                              trust=TRUST, now=now, repo=repo, receipt_path=receipt_path,
+                              versioned_addition=blob is not None)
     except Exception as exc:
-        reason = f'fetch-error:{type(exc).__name__}'
+        step = exc.step if isinstance(exc, Reject) else 2
+        reason = str(exc) if isinstance(exc, Reject) else f'fetch-error:{type(exc).__name__}'
         return {
-            'ok': False, 'step': 2, 'reason': reason,
+            'ok': False, 'step': step, 'reason': reason,
             'receipt_sha256': None, 'external_id': None, 'target_tree_sha': None,
             'head_tree_sha': None, 'reviewed_tree_sha': None,
             'ansible_version': None, 'result': None, 'details_url': None,
             'receipt_ref': None, 'verification_time': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
             'title': 'no valid Ansible validation receipt',
             'text': (f'No valid Ansible validation receipt. {reason} '
-                     '(verification step 2). No success conclusion is emitted.'),
+                     f'(verification step {step}). No success conclusion is emitted.'),
         }
 
 

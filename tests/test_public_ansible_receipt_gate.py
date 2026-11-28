@@ -3,19 +3,24 @@
 Every case builds real canonical JSON bytes and a real OpenSSH detached
 signature, so a passing case proves the whole verification path (not a mock).
 """
+import base64
 import hashlib
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+import ansible_receipt_gate as gate  # noqa: E402
 from ansible_receipt_gate import (  # noqa: E402
     EVIDENCE_ROOT, GENESIS, GIT_TREE_SCHEMA, RECEIPT_PATH, SCHEMA, SIGNATURE_NAMESPACE, TRUST,
     canonical_bytes, git_tree_sha, reviewed_tree_sha, sha256_bytes, verify_receipt,
+    versioned_receipt_path,
 )
 
 HEAD = '1' * 40
@@ -132,6 +137,108 @@ class ReceiptGateTests(unittest.TestCase):
         self.assertIn(f'receipt_sha256={sha256_bytes(raw)}', decision['text'])
         self.assertIn(f'target_tree_sha={self.reviewed_tree}', decision['text'])
         self.assertTrue(decision['details_url'].endswith(f'/blob/{HEAD}/{RECEIPT_PATH}'))
+
+    def live_tree_fixture(self, *, layout='versioned', extra_change=None):
+        repository = 'yonrasgg/ragnarsec-hardened-images'
+        prefix = f'repos/{repository}'
+        data = {}
+
+        def write_tree(entries):
+            tree = git_tree_sha(entries, schema=GIT_TREE_SCHEMA)
+            data[f'{prefix}/git/trees/{tree}'] = dict(sha=tree, truncated=False, tree=entries)
+            return tree
+
+        def entry(name, sha, kind='blob', mode='100644'):
+            return dict(path=name, sha=sha, type=kind, mode=mode)
+
+        def directory(name, children):
+            return entry(name, write_tree(children), 'tree', '040000')
+
+        def root(receipts):
+            return [*self.entries[:2], directory('receipts', receipts)]
+
+        receipt = self.receipt()
+        if layout != 'legacy':
+            reviewed = reviewed_tree_sha(self.entries, schema=GIT_TREE_SCHEMA)
+            ref = self.evd.replace('receipt.json', 'SHA256SUMS.captures')
+            receipt.update(schema=GIT_TREE_SCHEMA, target_tree_sha=reviewed, evidence_refs=[ref])
+            receipt['tree_assertion'].update(observed=reviewed, expected=reviewed, source_ref=ref)
+        raw = self.sign(receipt)
+        blob = hashlib.sha1(f'blob {len(raw)}'.encode() + b'\0' + raw).hexdigest()
+        filename = versioned_receipt_path(PARENT).split('/')[-1]
+        historic = entry('ansible-validate.json', 'c' * 40)
+        previous = entry('7' * 40 + '.json', '8' * 40)
+        if layout == 'legacy':
+            parent_entries = root([historic])
+            head_entries = root([entry('ansible-validate.json', blob)])
+            expected_path = RECEIPT_PATH
+        else:
+            parent_records = [previous]
+            new_records = [previous, entry(filename, blob)]
+            if extra_change == 'historic':
+                historic = entry(historic['path'], '9' * 40)
+                parent_entries = root([entry(historic['path'], 'c' * 40), directory('ansible', parent_records)])
+            elif extra_change == 'first':
+                parent_entries = root([historic])
+                new_records = new_records[1:]
+            else:
+                parent_entries = root([historic, directory('ansible', parent_records)])
+            if extra_change == 'symlink':
+                new_records[-1] = entry(filename, blob, mode='120000')
+            if extra_change == 'previous':
+                new_records[0] = entry(previous['path'], '9' * 40)
+            if extra_change == 'wrong-parent':
+                new_records[-1] = entry('9' * 40 + '.json', blob)
+            if extra_change == 'already-present':
+                parent_entries = root([historic, directory('ansible', new_records)])
+            head_entries = root([historic, directory('ansible', new_records)])
+            if extra_change == 'code':
+                head_entries[0] = entry('README.md', '9' * 40)
+            expected_path = versioned_receipt_path(PARENT)
+        data[f'{prefix}/git/commits/{HEAD}'] = dict(
+            sha=HEAD, tree=dict(sha=write_tree(head_entries)), parents=[dict(sha=PARENT)])
+        data[f'{prefix}/git/commits/{PARENT}'] = dict(
+            sha=PARENT, tree=dict(sha=write_tree(parent_entries)))
+        data[f'{prefix}/contents/{expected_path}?ref={HEAD}'] = dict(
+            encoding='base64', content=base64.b64encode(raw).decode(), type='file',
+            sha='9' * 40 if extra_change == 'blob' else blob)
+        return repository, data
+
+    def run_live_fixture(self, layout='versioned', extra_change=None):
+        repository, data = self.live_tree_fixture(layout=layout, extra_change=extra_change)
+        with patch.dict(os.environ, dict(REPOSITORY=repository, HEAD_SHA=HEAD), clear=True), \
+             patch.object(gate, 'TRUST', self.trust), \
+             patch.object(gate, 'datetime', wraps=datetime) as clock_mock, \
+             patch.object(gate, '_gh_json', side_effect=lambda key, _token: json.dumps(data[key])):
+            clock_mock.now.return_value = NOW
+            return gate.live_decision()
+
+    def test_live_gate_accepts_append_only_receipt_bound_to_the_parent(self):
+        for first in (None, 'first'):
+            with self.subTest(first=first):
+                result = self.run_live_fixture(extra_change=first)
+                self.assertTrue(result['ok'], result['reason'])
+                self.assertTrue(result['details_url'].endswith('/' + versioned_receipt_path(PARENT)))
+
+    def test_live_gate_preserves_the_legacy_layout(self):
+        result = self.run_live_fixture(layout='legacy')
+        self.assertTrue(result['ok'], result['reason'])
+        self.assertTrue(result['details_url'].endswith('/' + RECEIPT_PATH))
+
+    def test_live_gate_rejects_changes_besides_the_new_receipt(self):
+        for change in ('historic', 'previous', 'code', 'already-present'):
+            with self.subTest(change=change):
+                self.assertEqual(self.run_live_fixture(extra_change=change)['reason'],
+                                 'step-3:versioned-receipt-not-sole-addition')
+
+    def test_live_gate_rejects_wrong_path_mode_and_blob(self):
+        for change, reason in (
+            ('wrong-parent', 'versioned-receipt-for-parent-required'),
+            ('symlink', 'versioned-receipt-not-regular'),
+            ('blob', 'versioned-receipt-blob-mismatch'),
+        ):
+            with self.subTest(change=change):
+                self.assertEqual(self.run_live_fixture(extra_change=change)['reason'], 'step-3:' + reason)
 
     def test_rejects_missing_or_invalid_receipt_bytes(self):
         for raw in (b'', b'not json', b'{}'):

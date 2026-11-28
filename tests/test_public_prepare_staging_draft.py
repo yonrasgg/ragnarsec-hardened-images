@@ -12,7 +12,8 @@ from urllib.parse import urlencode
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from ansible_receipt_gate import GIT_TREE_SCHEMA, git_tree_sha, reviewed_tree_sha
 from prepare_staging_draft import (
-    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft, receipt_binding, run,
+    Correct, Hold, JENKINS_APP_ID, JENKINS_CONTEXT, JENKINS_ISSUER, OPEN_DRAFTS, REPO, REPO_ID,
+    create_once, fingerprint, plan_draft, receipt_binding, run,
 )
 
 
@@ -57,7 +58,11 @@ class StagingDraftTests(unittest.TestCase):
             f'git/trees/{self.tree}': dict(tree=self.tree_entries, truncated=False),
             'rules/branches/development': [dict(type='required_status_checks', parameters=dict(
                 strict_required_status_checks_policy=True,
-                required_status_checks=[dict(context=self.name, integration_id=self.app)]))],
+                required_status_checks=[dict(context=self.name, integration_id=self.app),
+                                        dict(context=JENKINS_CONTEXT, integration_id=JENKINS_APP_ID)]))],
+            f'commits/{self.fix}/statuses?per_page=100': [
+                dict(id=928, context=JENKINS_CONTEXT, state='success',
+                     creator=dict(login=JENKINS_ISSUER), created_at='2026-11-23T18:00:20Z')],
             self.checks: dict(total_count=1, check_runs=[dict(
                 id=29, name=self.name, app=dict(id=self.app), head_sha=self.fix,
                 status='completed', conclusion='success', completed_at='2026-11-23T18:00:00Z',
@@ -110,6 +115,23 @@ class StagingDraftTests(unittest.TestCase):
         gate['integration_id'] = self.app + 1
         with self.assertRaisesRegex(Hold, 'ansible-not-required-by-github'):
             self.plan()
+
+    def test_staging_draft_requires_the_jenkins_rule_and_its_latest_success(self):
+        checks = self.data['rules/branches/development'][0]['parameters']['required_status_checks']
+        rule = checks.pop()
+        with self.assertRaisesRegex(Hold, 'jenkins-not-required-by-github'):
+            self.plan()
+        checks.append(rule)
+        status = self.data[f'commits/{self.fix}/statuses?per_page=100'][0]
+        for key, value in (('state', 'pending'), ('created_at', '2026-11-23T18:02:00Z'),
+                           ('creator', {'login': 'other[bot]'})):
+            with self.subTest(key=key):
+                original = status[key]
+                status[key] = value
+                with self.assertRaisesRegex(Hold, 'jenkins-missing-trusted-pre-merge-success'):
+                    self.plan()
+                status[key] = original
+        self.assertEqual(self.plan()['jenkins_status'], 928)
 
     def test_check_run_with_wrong_summary_is_rejected(self):
         check = self.data[self.checks]['check_runs'][0]

@@ -47,7 +47,7 @@ class ReconciliationCandidate(unittest.TestCase):
         self.git(self.remote, 'commit', '-qm', path)
         return self.git(self.remote, 'rev-parse', 'HEAD')
 
-    def candidate(self):
+    def candidate(self, *, versioned=False):
         for branch in ('main', 'staging', 'development'):
             self.git(self.remote, 'switch', '-qc', branch, self.common)
             self.commit('route.txt', branch + '\n')
@@ -69,7 +69,9 @@ class ReconciliationCandidate(unittest.TestCase):
             capture_output=True, timeout=30).stdout.decode()
         self.manifest_path = 'reconciliation/PR-237.json'
         self.receipt_path = 'receipts/ansible-validate.json'
-        self.commit(self.manifest_path, json.dumps(dict(body, signature=signature)) + '\n')
+        receipt_parent = self.commit(self.manifest_path, json.dumps(dict(body, signature=signature)) + '\n')
+        if versioned:
+            self.receipt_path = route.versioned_receipt_path(receipt_parent)
         # This synthetic receipt tests the path boundary, not Ansible admission.
         self.commit(self.receipt_path, '{"fixture": true}\n')
 
@@ -127,6 +129,19 @@ class ReconciliationCandidate(unittest.TestCase):
         with self.gate_context():
             with self.assertRaisesRegex(route.RouteUnavailable, reason):
                 self.check_gate()
+
+    def test_reconciliation_accepts_the_exact_versioned_receipt_path(self):
+        self.candidate(versioned=True)
+        with self.gate_context():
+            report = self.check_gate()
+        self.assertEqual(report['result'], 'pass')
+        self.assertEqual(report['candidate_tree'], self.tree)
+
+    def test_reconciliation_rejects_a_second_receipt(self):
+        self.candidate(versioned=True)
+        head = self.git(self.remote, 'rev-parse', 'HEAD')
+        self.commit(route.versioned_receipt_path(head), '{}\n')
+        self.assert_rejected('reconciliation-unreviewed-candidate-files')
 
     def test_rejects_added_code_after_signed_review(self):
         self.candidate()

@@ -14,6 +14,9 @@ from ansible_receipt_gate import GIT_TREE_SCHEMA, SCHEMA, canonical_evidence_ref
 
 REPO = 'yonrasgg/ragnarsec-hardened-images'
 REPO_ID = 1426336836
+JENKINS_APP_ID = 5736684
+JENKINS_CONTEXT = 'continuous-integration/jenkins/pr-head'
+JENKINS_ISSUER = 'ragnarsec-jenkins-ci[bot]'
 OPEN_DRAFTS = 'pulls?state=open&base=staging&head=yonrasgg%3Adevelopment&per_page=100'
 RECEIPT_REF = re.compile(r'\breceipt_ref=([^\s]+)\b')
 RECEIPT_SCHEMA = re.compile(r'^receipt_schema=(.*)$', re.M)
@@ -56,6 +59,18 @@ def before_merge(check, merged_at):
         return datetime.fromisoformat(value) <= datetime.fromisoformat(merged_at)
     except (ValueError, TypeError):
         return False
+
+
+def verify_jenkins_status(get, head, merged_at):
+    statuses = get(f'commits/{head}/statuses?per_page=100')
+    require(len(statuses) < 100, 'incomplete-jenkins-status-list')
+    status = next((entry for entry in statuses if entry.get('context') == JENKINS_CONTEXT), {})
+    require(type(status.get('id')) is int and status['id'] > 0
+            and (status.get('creator') or {}).get('login') == JENKINS_ISSUER
+            and status.get('state') == 'success'
+            and before_merge({'completed_at': status.get('created_at')}, merged_at),
+            'jenkins-missing-trusted-pre-merge-success')
+    return status['id']
 
 
 def receipt_binding(check, tree, tree_entries):
@@ -134,11 +149,13 @@ def plan_draft(get, number, check_name, app_id):
     require(len(head_parents) == 1 and oid(head_parents[0]),
             'ansible-head-parent-not-single')
     rules = get('rules/branches/development')
-    require(any(r.get('type') == 'required_status_checks'
-                and r['parameters'].get('strict_required_status_checks_policy') is True
-                and any(c.get('context') == check_name and c.get('integration_id') == app_id
-                        for c in r['parameters'].get('required_status_checks', []))
-                for r in rules), 'ansible-not-required-by-github')
+    strict_checks = {(check.get('context'), check.get('integration_id'))
+                     for rule in rules if rule.get('type') == 'required_status_checks'
+                     and rule['parameters'].get('strict_required_status_checks_policy') is True
+                     for check in rule['parameters'].get('required_status_checks', [])}
+    require((check_name, app_id) in strict_checks, 'ansible-not-required-by-github')
+    require((JENKINS_CONTEXT, JENKINS_APP_ID) in strict_checks, 'jenkins-not-required-by-github')
+    jenkins_status = verify_jenkins_status(get, head, pr.get('merged_at'))
     query = urlencode(dict(check_name=check_name, filter='latest', per_page=100))
     checks = get(f'commits/{head}/check-runs?{query}')
     require(checks.get('total_count', 100) < 100, 'incomplete-check-list')
@@ -167,7 +184,7 @@ def plan_draft(get, number, check_name, app_id):
     require(get(f'git/commits/{stage}')['tree']['sha'] != tree, 'nothing-new-for-staging')
     require(get(OPEN_DRAFTS) == [], 'staging-pr-already-open')
     return dict(pr=number, head=head, development=dev, staging=stage,
-                ansible_check=check['id'], ansible_receipt=receipt['external_id'],
+                jenkins_status=jenkins_status, ansible_check=check['id'], ansible_receipt=receipt['external_id'],
                 ansible_receipt_ref=receipt['receipt_ref'],
                 ansible_receipt_tree=receipt['target_tree_sha'],
                 ansible_receipt_head_tree=receipt['head_tree_sha'],
@@ -200,12 +217,17 @@ def create_once(get, post, number, check_name, app_id, expected):
     return new['number']
 
 
-def api(method, path, body=None):
+def api(method, path, body=None, *, token=None):
     args = ['gh', 'api', '--hostname', 'github.com', '--method', method, f'repos/{REPO}/{path}']
     if body is not None:
         args.extend(('--input', '-'))
+    env = dict(os.environ)
+    env.pop('MAIN_DRAFT_TOKEN', None)
+    env.pop('STAGING_DRAFT_TOKEN', None)
+    if token is not None:
+        env['GH_TOKEN'] = token
     return json.loads(subprocess.check_output(args, input=json.dumps(body).encode() if body else None,
-                                              timeout=30))
+                                              timeout=30, env=env))
 
 
 def run():
@@ -252,10 +274,14 @@ def run():
                 f.write(f'plan={fingerprint(plan)}\n')
             print(json.dumps(dict(plan, result='human-staging-draft-preflight')))
         else:
-            require(os.environ.get('CREATE_STAGING_DRAFTS') == 'true'
+            token = os.environ.get('STAGING_DRAFT_TOKEN')
+            require(os.environ.get('CREATE_STAGING_DRAFTS') == 'true' and bool(token)
                     and re.fullmatch(r'[a-f0-9]{64}', args.create_plan), 'draft-creation-disabled')
-            draft = create_once(get, lambda p, b: api('POST', p, b), number, check,
-                                int(raw_app), args.create_plan)
+
+            def post(path, body):
+                return api('POST', path, body, token=token)
+
+            draft = create_once(get, post, number, check, int(raw_app), args.create_plan)
             print(json.dumps(dict(result='draft-created-awaiting-human-review', pull_request=draft)))
     except Correct as exc:
         print(json.dumps({'result': 'new-fix-required', 'route': str(exc)}))

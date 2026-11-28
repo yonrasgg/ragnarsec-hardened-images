@@ -248,6 +248,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-post-pr258-20261127" ]; then
                     require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
                       development 3911109caf1a8389a5bba29c241bbccce5183cd3
+                  elif [ "$source" = "sync/development-to-staging-receipt-layout-20261128" ]; then
+                    require_scoped_sync "$head" staging 7d440cbddd17c2fd3e0847609ce0282ed0845c9d \
+                      development eac056ce9a5ab940bc23e98dea3651b58ba70ea2
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -286,6 +289,9 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-post-pr255-20261127" ]; then
                     require_scoped_sync "$head" main 57bec7ffc5aa4baf87dfbf333d3b087c5b2befea \
                       staging e5b1d84b2c7f8de69016b56a94a2a24116201c71
+                  elif [ "$source" = "sync/staging-to-main-receipt-layout-20261128" ]; then
+                    require_scoped_sync "$head" main dfd4b7e9d9a0f0b7fe4cec05fe893d8153c78daa \
+                      staging 7d440cbddd17c2fd3e0847609ce0282ed0845c9d
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
