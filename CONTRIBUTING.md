@@ -20,8 +20,8 @@ Long-lived branches:
 
 | Branch | Purpose | Accepts | Publishes |
 |---|---|---|---|
-| `main` | Repository default and release | pull request from `staging` only | yes, with `PUBLISH` and approval |
-| `staging` | Full validation and human review | pull request from `development` only | no |
+| `main` | Repository default and release | reviewed `staging` tree | yes, with `PUBLISH` and approval |
+| `staging` | Full validation and human review | reviewed `development` tree | no |
 | `development` | Integration | short-lived branches by pull request | no |
 
 The order is fixed: `development` -> `staging` -> `main`. It is never skipped,
@@ -60,6 +60,11 @@ A squash changes the commit SHA; its exact tree must still match the validated
 source tree for provenance. Merge commits are disabled. Direct pushes, force
 pushes and branch deletion are blocked on the three long-lived branches;
 `staging` and `main` additionally require signed commits.
+
+The ordinary PR source is the upstream protected branch. If its ordinary merge
+has a reproducible content conflict, the protected evaluator can qualify a
+signed reconciliation carrying the exact same upstream tree. This is a route
+to review, not permission to merge or a way to omit a required check.
 
 `development` accepts unsigned commits from short-lived branches, but only
 through a pull request; the squash commit is created and signed by GitHub.
@@ -126,6 +131,31 @@ trusted policy. One image's successful status cannot approve a multi-image
 promotion. Formal deployment additionally requires signed digests, a batch
 preflight, and per-service acceptance and rollback checks.
 
+### Reusable reconciliation contract
+
+For a genuinely conflicting ordinary route, the only supported reconciliation
+name is `sync/<source>-to-<target>-<full-source-sha>`. The candidate must have one
+parent equal to the current target, the exact protected source tree, and the
+owner SSH signature over this trailer:
+
+```text
+RagnarSec-Promotion-Source: <source>@<full-source-sha> -> <target>
+```
+
+Actions loads `tools/promotion_candidate.py` from the protected target. Jenkins
+uses `tools/verify_protected_promotion.sh` to load that evaluator from the same
+live target; the adapter rejects a synthetic merge checkout and an unexpected
+job, repository, fork or PR context. Both verify refs before and after the
+simulation. Do not add another date, PR number or one-time branch exception to
+`Jenkinsfile`. No candidate or receipt is signed by this evaluator.
+
+The target must already contain the reviewed policy. A new evaluator in a PR
+cannot install or authorize itself under an older target policy. Likewise,
+calling the adapter from a PR's Jenkinsfile does not prove that Jenkins enforces
+it independently of PR code. The
+[activation and enforcement runbook](.github/tdd/rollout-promotion-candidate.md)
+separates those live acceptance steps from local tests.
+
 ## Local commit gate
 
 After reviewing the hook, enable it with `git config core.hooksPath .githooks`.
@@ -166,17 +196,11 @@ the protected environment. No persistent Actions artifact uploads or cross-run
 caches are configured. Cost/billing settings are managed outside this catalog;
 workflow limits alone do not prove an account spending cap.
 
-### Promotion order
+### Automated drafts and Ansible provenance
 
-1. Every correction starts on `fix/*` and enters `development` only after the
-   approved Ansible checks pass. Jenkins image checks do not replace Ansible.
-2. After integration, Actions can open a `development → staging` **draft**.
-   A human reviews the checks, marks it ready and performs **Squash and merge**.
-3. Jenkins validates the exact staged changes. Only complete, current and
-   enforced Jenkins evidence may drive automatic promotion to `main`. The
-   staging draft workflow does not perform that promotion or Publish.
-4. A confirmed failed gate sends the correction through a new `fix/*` branch
-   into `development`; pending, stale or missing evidence holds the process.
+Every correction starts on `fix/*` and enters `development` only after the
+approved Ansible checks pass. Jenkins image checks do not replace Ansible.
+The promotion order and owner-operated staging squash remain as defined above.
 
 The `prepare-staging-draft` workflow has a read-only preflight and an opt-in
 draft-only job, with no contents write permission. Before setting
@@ -187,11 +211,42 @@ Ansible check output must contain `pr=<number>;base=<sha>;head=<sha>` on the
 reviewed head and complete before its squash. The workflow does not generate
 or attest this proof itself. Existing staging PRs are left untouched.
 
+The opt-in `prepare-main-draft` workflow runs from protected `main` after a
+staging notification. It requires the owner's signed staging squash, the exact
+tree and parent, successful pre-merge Actions and Jenkins evidence, and the
+Ansible receipt from the corresponding integrated `fix/*` PR. The Actions proof
+is bound to its workflow, issuer, latest run and attempt, and a workflow
+definition matching protected policy. The report labels Ansible as integration
+provenance; it is not a new Ansible run or check on a promotion head.
+
+The main draft is created only if the ordinary `staging` to `main` simulation
+is clean and exact, the live refs still match, no main PR exists and
+`RAGNARSEC_CREATE_MAIN_DRAFTS=true` is enabled. A conflict produces the pinned
+refs and conflict paths for a reviewed correction or policy activation. The
+workflow does not invent a signature, retry the same failure indefinitely,
+merge, publish or alter Jenkins job discovery. Its read-only preflight can run
+without enabling draft creation.
+
 For new receipt histories, add `receipts/ansible/<reviewed-parent-sha>.json`
 in a commit whose only change is that signed receipt. The verifier derives the
 path from the exact parent and checks that removing the file reconstructs the
 parent tree, including previously recorded receipts. The legacy singleton
 layout remains supported on commits that predate the versioned directory.
+
+### Repository hygiene
+
+Keep reusable build tools, policy, tests and current PR manifests here. Remove a
+completed operation's manifest from the tip only after checking its consumers
+and immutable Git history; see [manifest lifecycle](reconciliation/README.md).
+Do not delete a signed receipt merely because its PR merged. Operational
+captures, draft evidence, credentials and host-specific handoffs belong in their
+approved external custody, not in the public image catalog.
+
+Python contract tests use `tests/test_public*.py`, the pattern used by the local
+hook and Jenkins. Preserve reusable negative cases for signatures, provenance,
+concurrency, scan policy and native image evidence. Consolidate duplicate test
+loaders and remove assertions for retired one-time branch names when equivalent
+behavioral coverage exists; test count alone is not the maintenance target.
 
 Before promotion, also run `python3 tools/publication_guard.py . --history`
 against a complete checkout. Deleting an internal file at the tip is insufficient
