@@ -120,6 +120,14 @@ squashes into `staging`; promotion to `main` is intended to be automatic only
 after the required GitHub enforcement is proven. See the
 [promotion preflight](CONTRIBUTING.md#promotion-preflight).
 
+Actions and Jenkins share a protected-target evaluator for ordinary promotions
+and signed reconciliations that reproduce an actual conflict and the exact
+upstream tree. The opt-in main draft also checks Actions/Jenkins review evidence
+and the original integrated Ansible receipt. These tools prepare and qualify
+candidates; they do not activate protected policy, merge, or publish by
+themselves. See the [reconciliation contract](CONTRIBUTING.md#reusable-reconciliation-contract)
+and [activation runbook](.github/tdd/rollout-promotion-candidate.md).
+
 ## Using a published image
 
 1. Read the [image-specific README](#image-catalog), including its upstream
