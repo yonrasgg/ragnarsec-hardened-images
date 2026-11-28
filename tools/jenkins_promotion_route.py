@@ -179,6 +179,36 @@ def require_reconciliation_pins(manifest, refs, head):
             raise RouteUnavailable('reconciliation-unreviewed-guard-files')
 
 
+def require_reconciliation_candidate(manifest, head):
+    """Bind the final source tree to reviewed code plus exact metadata paths.
+
+    The owner-signed manifest binds the complete reviewed source tree. Only this
+    PR's manifest and the Ansible receipt may differ in the final candidate.
+    Receipt authenticity remains the responsibility of the independent Ansible
+    gate; this check never treats an allowed path as an accepted receipt.
+    """
+    allowed = {
+        f"{MANIFEST_DIR}/{MANIFEST_NAME.format(pr=manifest['pr'])}",
+        'receipts/ansible-validate.json',
+    }
+    changed = git('diff', '--no-ext-diff', '--no-textconv', '--no-renames',
+                  '--ignore-submodules=none', '--name-only', '-z',
+                  manifest['reviewed_head'], head, '--')
+    if any(path not in allowed for path in changed.split('\0') if path):
+        raise RouteUnavailable('reconciliation-unreviewed-candidate-files')
+    # Read Git objects, not checkout paths. Both metadata files must remain
+    # regular, non-executable blobs; deletion, symlinks and gitlinks fail closed.
+    for path in sorted(allowed):
+        entry = git('ls-tree', '-z', head, '--', path)
+        if re.fullmatch(r'100644 blob [0-9a-f]{40}\t' + re.escape(path) + r'\x00',
+                        entry) is None:
+            raise RouteUnavailable('reconciliation-candidate-metadata-not-regular')
+    candidate_tree = git('rev-parse', f'{head}^{{tree}}').strip()
+    if not OID.fullmatch(candidate_tree):
+        raise RouteUnavailable('reconciliation-candidate-tree-unavailable')
+    return candidate_tree
+
+
 def plan_reconciliation(path, inputs, expected_reviewed_tree=None):
     """Model the two named target-based drafts, never mark a direct squash clean."""
     repo = Repository(os.fspath(path))
@@ -278,12 +308,15 @@ def check(source, reviewed_head, reconcile=False, actions_change_id=None, action
         require_reconciliation_pins(manifest, pins, reviewed_source)
         if failed[0]['conflict_paths'] != manifest['conflict_paths']:
             raise RouteUnavailable('unrecognized-direct-route-conflict')
-        inputs = dict(manifest['bases'], fix_head=manifest['reviewed_head'])
-        planned = plan_reconciliation('.', inputs, manifest['reviewed_tree'])
+        candidate_tree = require_reconciliation_candidate(manifest, head)
+        inputs = dict(manifest['bases'], fix_head=head)
+        planned = plan_reconciliation('.', inputs, candidate_tree)
         if live(refs) != pins:
             raise RouteUnavailable('live-refs-changed-during-route-check')
         return dict(planned, direct_route=report, manifest_pr=manifest['pr'],
                     manifest_reviewed_head=manifest['reviewed_head'],
+                    manifest_reviewed_tree=manifest['reviewed_tree'],
+                    candidate_head=head, candidate_tree=candidate_tree,
                     run_id=manifest['run_id'])
     if run.returncode == 0:
         expected = ['fix-to-development', 'development-to-staging', 'staging-to-main']

@@ -224,7 +224,10 @@ class JenkinsPromotionRoute(unittest.TestCase):
                        {'lane': 'staging-to-main-reconciliation', 'result': 'clean'}],
                    'requires_verified_reconciliation_prs': True}
         git_calls = ['', dev + '\n', '', json.dumps(manifest),
-                     f"{reviewed} {manifest['parent']}\n", manifest['reviewed_tree'] + '\n']
+                     f"{reviewed} {manifest['parent']}\n", manifest['reviewed_tree'] + '\n',
+                     '', '100644 blob ' + 'd' * 40 + '\treceipts/ansible-validate.json\0',
+                     '100644 blob ' + 'e' * 40 + '\treconciliation/PR-237.json\0',
+                     manifest['reviewed_tree'] + '\n']
         real_run = subprocess.run
 
         def fake_run(argv, **kwargs):
@@ -244,13 +247,16 @@ class JenkinsPromotionRoute(unittest.TestCase):
             report = check(manifest['source_branch'], head, True, '237',
                            'yonrasgg/ragnarsec-hardened-images', head, '237')
         self.assertEqual(report, dict(planned, direct_route=direct, manifest_pr='237',
-                                      manifest_reviewed_head=reviewed, run_id=manifest['run_id']))
+                                      manifest_reviewed_head=reviewed,
+                                      manifest_reviewed_tree=manifest['reviewed_tree'],
+                                      candidate_head=head, candidate_tree=manifest['reviewed_tree'],
+                                      run_id=manifest['run_id']))
         self.assertEqual(report['result'], 'pass')
         self.assertFalse(report['merge_authorized'])
         self.assertEqual([p['lane'] for p in report['phases']],
                          ['fix-to-development', 'development-to-staging-reconciliation',
                           'staging-to-main-reconciliation'])
-        plan.assert_called_once_with('.', dict(manifest['bases'], fix_head=reviewed),
+        plan.assert_called_once_with('.', dict(manifest['bases'], fix_head=head),
                                      manifest['reviewed_tree'])
         for change_id, repo in (('238', 'yonrasgg/ragnarsec-hardened-images'),
                                 ('237', None)):
