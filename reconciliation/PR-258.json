@@ -1,0 +1,33 @@
+{
+  "bases": {
+    "development": "92fb66e4d0c6df66946f7c3c72087e8ca09f6942",
+    "main": "57bec7ffc5aa4baf87dfbf333d3b087c5b2befea",
+    "staging": "e5b1d84b2c7f8de69016b56a94a2a24116201c71"
+  },
+  "conflict_paths": [
+    ".github/workflows/check-promotion-candidate.yml",
+    ".github/workflows/prepare-staging-draft.yml",
+    ".github/workflows/promotion-route-preflight.yml",
+    "Jenkinsfile",
+    "tests/ci_workflow_contracts.py",
+    "tests/test_public_ci.py",
+    "tests/test_public_jenkins_promotion_route.py",
+    "tests/test_public_prepare_staging_draft.py",
+    "tools/jenkins_promotion_route.py",
+    "tools/prepare_staging_draft.py",
+    "wgdashboard/Dockerfile"
+  ],
+  "guard_files": [
+    "tests/test_public_jenkins_promotion_route.py",
+    "tests/test_public_jenkins_reconciliation_candidate.py",
+    "tools/jenkins_promotion_route.py"
+  ],
+  "parent": "92fb66e4d0c6df66946f7c3c72087e8ca09f6942",
+  "pr": "258",
+  "reviewed_head": "b7569f8a8081b696dfc98001e83caf7c75533f3f",
+  "reviewed_tree": "5236f5f7e0ca1ad49aee43095c3469ee782556b3",
+  "run_id": "promotion-route-reconciliation-pr258-b7569f8a",
+  "schema_version": 1,
+  "source_branch": "fix/bind-final-reconciliation-candidate",
+  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgx64W+hzyYvq53wSS+Ax1PL3BPY\nyCBGmSXMD0AtWQgREAAAAlcmFnbmFyc2VjLXByb21vdGlvbi1yZWNvbmNpbGlhdGlvbi12\nMQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEBXIgkrV9E2euCC9bMuHn\n1yst1DWZXPVnTFb3KKxljwtPs+22G73eTRPUpwJoPq6IlqhIqfQ5x9xz3wqWLiMpkD\n-----END SSH SIGNATURE-----\n"
+}
