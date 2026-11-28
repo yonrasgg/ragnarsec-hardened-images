@@ -763,7 +763,7 @@ class JenkinsBoundaries(unittest.TestCase):
     def test_only_reviewed_read_only_workflows_are_allowed(self):
         workflows = ROOT / '.github/workflows'
         reviewed = {
-            'check-promotion-candidate.yml': '2192483f591dd4f587eba81bc99c84fdd9b0578f18db0365ddbc3255c328ef3a',
+            'check-promotion-candidate.yml': '1ca716b9086f37995c835dee85f3f0c8493f655c3b962253e6dc48c86b1e80bd',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
             'prepare-staging-draft.yml': 'd21ce465574b2cf1f2581f1a0fafb61a883c7cd61e4707003b4bf932cb824141',
             'promotion-route-preflight.yml': '96332ab904393044443589a67569979a283a6076f0010cbd0cf5c71261517205',
@@ -943,6 +943,25 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('permissions:\n  contents: read', workflow)
         self.assertNotIn('secrets.', workflow)
         self.assertNotIn('pull-requests: write', workflow)
+
+    def test_promotion_transition_uses_the_same_immutable_policy_in_actions_and_jenkins(self):
+        workflow = (ROOT / '.github/workflows/check-promotion-candidate.yml').read_text()
+        adapter = (ROOT / 'tools/verify_protected_promotion.sh').read_text()
+        pins = {
+            'staging': '2add4efdd48e1d579e47158928b9d0cde9bccd97',
+            'main': 'dfd4b7e9d9a0f0b7fe4cec05fe893d8153c78daa',
+        }
+        for branch, commit in pins.items():
+            with self.subTest(branch=branch):
+                self.assertRegex(workflow, rf"base.ref == '{branch}' &&\s+.*base.sha == '{commit}'")
+                self.assertIn(f'{branch}:{commit}', adapter)
+        revision = '326546a32c000ed16abe78767152323770a9e232'
+        self.assertIn(f'TRANSITION_POLICY: {revision}', workflow)
+        self.assertIn(f'transition_policy={revision}', adapter)
+        self.assertIn('ref: ${{ env.TRANSITION_POLICY }}', workflow)
+        self.assertIn('python3 -B .trusted-promotion-policy/tools/promotion_candidate.py "$GITHUB_EVENT_PATH"', workflow)
+        self.assertIn('elif [[ "$TRANSITION_CHECKOUT" == skipped ]]', workflow)
+        self.assertIn('python3 -B "$promotion_evaluator"', adapter)
 
     def test_staging_draft_is_automatic_with_owner_app_token_and_manual_squash(self):
         # CI-004 corrective: draft creation is AUTOMATIC via a protected-base
