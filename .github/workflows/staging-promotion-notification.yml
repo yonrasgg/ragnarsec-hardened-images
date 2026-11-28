@@ -1,0 +1,16 @@
+name: Staging promotion notification
+
+"on":
+  push:
+    branches: [staging]
+
+permissions: {}
+
+jobs:
+  notify:
+    if: github.repository == 'yonrasgg/ragnarsec-hardened-images'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Notify the protected workflow
+        run: printf '%s\n' 'A staging update awaits verification.'

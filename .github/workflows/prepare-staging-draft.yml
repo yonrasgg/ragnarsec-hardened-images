@@ -105,6 +105,7 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      statuses: read
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
@@ -135,6 +136,9 @@ jobs:
       vars.RAGNARSEC_CREATE_STAGING_DRAFTS == 'true'
     permissions:
       contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     environment: ansible-ci
@@ -156,12 +160,11 @@ jobs:
           private-key: ${{ secrets.RAGNARSEC_ANSIBLE_PROTECTED_APP_PRIVATE_KEY }}
           owner: yonrasgg
           repositories: ragnarsec-hardened-images
-          permission-checks: read
-          permission-contents: read
           permission-pull-requests: write
       - name: Recheck and create only a draft
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          STAGING_DRAFT_TOKEN: ${{ steps.app-token.outputs.token }}
           INTEGRATED_PR: ${{ needs.resolve-integrated-pr.outputs.number }}
           ANSIBLE_APP_ID: ${{ vars.RAGNARSEC_ANSIBLE_APP_ID }}
           ANSIBLE_CHECK_NAME: ${{ vars.RAGNARSEC_ANSIBLE_CHECK_NAME }}
