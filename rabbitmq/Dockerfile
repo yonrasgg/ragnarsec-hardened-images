@@ -37,5 +37,4 @@ ENV RABBITMQ_DATA_DIR=/var/lib/rabbitmq \
 # Expose the AMQP port only. The management plugin is not enabled by default.
 EXPOSE 5672
 
-ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["rabbitmq-server"]
