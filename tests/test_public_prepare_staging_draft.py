@@ -10,9 +10,10 @@ from unittest.mock import patch
 from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-from ansible_receipt_gate import reviewed_tree_sha
+from ansible_receipt_gate import GIT_TREE_SCHEMA, git_tree_sha, reviewed_tree_sha
 from prepare_staging_draft import (
-    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft, run,
+    Correct, Hold, JENKINS_APP_ID, JENKINS_CONTEXT, JENKINS_ISSUER, OPEN_DRAFTS, REPO, REPO_ID,
+    create_once, fingerprint, plan_draft, receipt_binding, run,
 )
 
 
@@ -57,7 +58,11 @@ class StagingDraftTests(unittest.TestCase):
             f'git/trees/{self.tree}': dict(tree=self.tree_entries, truncated=False),
             'rules/branches/development': [dict(type='required_status_checks', parameters=dict(
                 strict_required_status_checks_policy=True,
-                required_status_checks=[dict(context=self.name, integration_id=self.app)]))],
+                required_status_checks=[dict(context=self.name, integration_id=self.app),
+                                        dict(context=JENKINS_CONTEXT, integration_id=JENKINS_APP_ID)]))],
+            f'commits/{self.fix}/statuses?per_page=100': [
+                dict(id=928, context=JENKINS_CONTEXT, state='success',
+                     creator=dict(login=JENKINS_ISSUER), created_at='2026-11-23T18:00:20Z')],
             self.checks: dict(total_count=1, check_runs=[dict(
                 id=29, name=self.name, app=dict(id=self.app), head_sha=self.fix,
                 status='completed', conclusion='success', completed_at='2026-11-23T18:00:00Z',
@@ -110,6 +115,23 @@ class StagingDraftTests(unittest.TestCase):
         gate['integration_id'] = self.app + 1
         with self.assertRaisesRegex(Hold, 'ansible-not-required-by-github'):
             self.plan()
+
+    def test_staging_draft_requires_the_jenkins_rule_and_its_latest_success(self):
+        checks = self.data['rules/branches/development'][0]['parameters']['required_status_checks']
+        rule = checks.pop()
+        with self.assertRaisesRegex(Hold, 'jenkins-not-required-by-github'):
+            self.plan()
+        checks.append(rule)
+        status = self.data[f'commits/{self.fix}/statuses?per_page=100'][0]
+        for key, value in (('state', 'pending'), ('created_at', '2026-11-23T18:02:00Z'),
+                           ('creator', {'login': 'other[bot]'})):
+            with self.subTest(key=key):
+                original = status[key]
+                status[key] = value
+                with self.assertRaisesRegex(Hold, 'jenkins-missing-trusted-pre-merge-success'):
+                    self.plan()
+                status[key] = original
+        self.assertEqual(self.plan()['jenkins_status'], 928)
 
     def test_check_run_with_wrong_summary_is_rejected(self):
         check = self.data[self.checks]['check_runs'][0]
@@ -169,6 +191,22 @@ class StagingDraftTests(unittest.TestCase):
         finally:
             check['output']['text'] = original
         self.assertFalse(self.posts)
+
+    def test_consumes_the_canonical_capture_reference_in_both_receipt_versions(self):
+        check = self.data[self.checks]['check_runs'][0]
+        reference = self.receipt_ref.replace('receipt.json', 'SHA256SUMS.captures')
+        check['output']['text'] = self.receipt_text.replace(self.receipt_ref, reference)
+        self.assertEqual(self.plan()['ansible_receipt_ref'], reference)
+
+        canonical = git_tree_sha(self.tree_entries, schema=GIT_TREE_SCHEMA)
+        reviewed = reviewed_tree_sha(self.tree_entries, schema=GIT_TREE_SCHEMA)
+        check['output']['text'] = check['output']['text'].replace(
+            f'head_tree_sha={self.tree}', f'head_tree_sha={canonical}').replace(
+            f'target_tree_sha={self.reviewed_tree}', f'target_tree_sha={reviewed}')
+        check['output']['text'] += f'\nreceipt_schema={GIT_TREE_SCHEMA}'
+        self.assertEqual(receipt_binding(check, canonical, self.tree_entries)['receipt_ref'], reference)
+        check['output']['text'] = check['output']['text'].replace(reference, self.receipt_ref)
+        self.assertIsNone(receipt_binding(check, canonical, self.tree_entries))
 
     def test_invalid_receipt_hash_or_unallowlisted_ref_holds_the_draft(self):
         check = self.data[self.checks]['check_runs'][0]

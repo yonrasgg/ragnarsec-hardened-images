@@ -1,1 +1,77 @@
-{"actor":"userone","ansible_version":"ansible-playbook [core 2.19.11]\n  config file = None\n  configured module search path = ['/home/userone/.ansible/plugins/modules', '/usr/share/ansible/plugins/modules']\n  ansible python module location = /usr/lib/python3/dist-packages/ansible\n  ansible collection location = /home/userone/.ansible/collections:/usr/share/ansible/collections\n  executable location = /usr/bin/ansible-playbook\n  python version = 3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0] (/usr/bin/python3)\n  jinja version = 3.1.6\n  pyyaml version = 6.0.2 (with libyaml v0.2.5)\n","ansible_version_sha256":"3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c","chain":{"prev_receipt_sha256":"0000000000000000000000000000000000000000000000000000000000000000","seq":1},"commands":[{"argv":["/usr/bin/ansible-playbook","--version"],"cwd":"/home/userone/ragnarsec-optionc-pilot/20261127T143855Z-post-h4-c1c2.TSImYgpB/rabbitmq","finished_at":"2026-11-27T14:38:56Z","id":"C1","owner_gate":false,"rc":0,"started_at":"2026-11-27T14:38:56Z","stderr_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","stdout_sha256":"3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c","sudo_required":false},{"argv":["/usr/bin/ansible-playbook","--syntax-check","-i","/home/userone/ragnarsec-optionc-pilot/20261127T143855Z-post-h4-c1c2.TSImYgpB/inputs/sandbox-inventory.template.ini","/home/userone/ragnarsec-optionc-pilot/20261127T143855Z-post-h4-c1c2.TSImYgpB/inputs/batch-all-services.yml","-e","@/home/userone/ragnarsec-optionc-pilot/20261127T143855Z-post-h4-c1c2.TSImYgpB/inputs/batch-services-41.yml","-e","batch_publish=false"],"cwd":"/home/userone/ragnarsec-optionc-pilot/20261127T143855Z-post-h4-c1c2.TSImYgpB/rabbitmq","finished_at":"2026-11-27T14:38:57Z","id":"C2","owner_gate":false,"rc":0,"started_at":"2026-11-27T14:38:56Z","stderr_sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","stdout_sha256":"330ebaf0d57be91b84258fc8c43c6ede136215f39717451a2ef7f8852521d2a5","sudo_required":false}],"evidence_refs":["40-Evidence/Audits/change-validation/heimdall/20261127T143856Z-r2-syntax-rabbitmq-a53cbdc8/SHA256SUMS.captures"],"host_id":"heimdall","inventory_sha":"f2939ab3a79db96dc30fd2e116ac7a426ce315274609b741f1efee034151f1b3","observed_at":"2026-11-27T14:38:57Z","outputs_sha256":"43897796e8921807df9f18b715a797002b7b9d36b32d832f3f708dcc4f2036a7","owner_gates":[],"playbook_sha":"c3a2f81f39eb75f4ad29e43b13cb97b4be27db5f1ab8107634df0459236069c4","result":"pass","run_id":"20261127T143856Z-r2-syntax-rabbitmq-a53cbdc8","schema":"ragnarsec.validation-receipt/1.0","signature":"-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABAHwhoEYMnd1Okeg/MLCBMNKh93gvg8rq0ejDFsAI7FN\nBqJH/5zVyQU/A6Ug8HKZeAq4TkSltIoazNE2KeEEmfAA==\n-----END SSH SIGNATURE-----\n","signer":{"identity":"heimdall:userone","key_id":"heimdall-userone-pilot-ed25519","mechanism":"ed25519","public_key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiv/sPquJD3nPifYbSsKvzBvT0fiH0SdCtJ0Qm0S3n6 ragnarsec-receipt-signer@heimdall\n"},"sudo_required":false,"target_commit_sha":"a53cbdc82437d9c552f30141b312da034012918c","target_tree_sha":"f2e2f1e6c0d27b78d57a93266601de7e542d3905","tree_assertion":{"expected":"f2e2f1e6c0d27b78d57a93266601de7e542d3905","match":true,"method":"authenticated-heimdall-git-bundle-exact-parent-and-gate-tree","observed":"f2e2f1e6c0d27b78d57a93266601de7e542d3905"},"validation_profile":"syntax-v1"}
+{
+  "actor": "userone",
+  "ansible_version": "ansible-playbook [core 2.19.11]\n  config file = None\n  configured module search path = ['/home/userone/.ansible/plugins/modules', '/usr/share/ansible/plugins/modules']\n  ansible python module location = /usr/lib/python3/dist-packages/ansible\n  ansible collection location = /home/userone/.ansible/collections:/usr/share/ansible/collections\n  executable location = /usr/bin/ansible-playbook\n  python version = 3.13.5 (main, Aug 10 2026, 12:06:59) [GCC 14.2.0] (/usr/bin/python3)\n  jinja version = 3.1.6\n  pyyaml version = 6.0.2 (with libyaml v0.2.5)\n",
+  "ansible_version_sha256": "3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c",
+  "chain": {
+    "prev_receipt_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "seq": 1
+  },
+  "commands": [
+    {
+      "argv": [
+        "/usr/bin/ansible-playbook",
+        "--version"
+      ],
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261128T152710Z-ansible-pr262-c1c2.JD9AVJdH/ansible-ci",
+      "finished_at": "2026-11-28T15:27:11Z",
+      "id": "C1",
+      "owner_gate": false,
+      "rc": 0,
+      "started_at": "2026-11-28T15:27:11Z",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c",
+      "sudo_required": false
+    },
+    {
+      "argv": [
+        "/usr/bin/ansible-playbook",
+        "--syntax-check",
+        "-i",
+        "/home/userone/ragnarsec-optionc-pilot/20261128T152710Z-ansible-pr262-c1c2.JD9AVJdH/inputs/sandbox-inventory.template.ini",
+        "/home/userone/ragnarsec-optionc-pilot/20261128T152710Z-ansible-pr262-c1c2.JD9AVJdH/inputs/batch-all-services.yml",
+        "-e",
+        "@/home/userone/ragnarsec-optionc-pilot/20261128T152710Z-ansible-pr262-c1c2.JD9AVJdH/inputs/batch-services-41.yml",
+        "-e",
+        "batch_publish=false"
+      ],
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261128T152710Z-ansible-pr262-c1c2.JD9AVJdH/ansible-ci",
+      "finished_at": "2026-11-28T15:27:13Z",
+      "id": "C2",
+      "owner_gate": false,
+      "rc": 0,
+      "started_at": "2026-11-28T15:27:11Z",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "af601a48048214c2d5f7313518194c70faf5882258df175f5dd9f53519b8137e",
+      "sudo_required": false
+    }
+  ],
+  "evidence_refs": [
+    "40-Evidence/Audits/change-validation/heimdall/20261128T152711Z-r2-syntax-ansible-ci-d9231ddc/SHA256SUMS.captures"
+  ],
+  "host_id": "heimdall",
+  "inventory_sha": "f2939ab3a79db96dc30fd2e116ac7a426ce315274609b741f1efee034151f1b3",
+  "observed_at": "2026-11-28T15:27:13Z",
+  "outputs_sha256": "47b51cc463899b80c256190489da217bb4a83877f54b70ace2a9e2edf91c2a36",
+  "owner_gates": [],
+  "playbook_sha": "c3a2f81f39eb75f4ad29e43b13cb97b4be27db5f1ab8107634df0459236069c4",
+  "result": "pass",
+  "run_id": "20261128T152711Z-r2-syntax-ansible-ci-d9231ddc",
+  "schema": "ragnarsec.validation-receipt/1.1",
+  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABA9xeOWa/o24VOvBEssA6whBnhOQO+23oc1PUuVo1+ng\nIIeSw3DRloa732t3EFg35G3f2zijRnRVwaSxz8ZptRBQ==\n-----END SSH SIGNATURE-----\n",
+  "signer": {
+    "identity": "heimdall:userone",
+    "key_id": "heimdall-userone-pilot-ed25519",
+    "mechanism": "ed25519",
+    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiv/sPquJD3nPifYbSsKvzBvT0fiH0SdCtJ0Qm0S3n6 ragnarsec-receipt-signer@heimdall\n"
+  },
+  "sudo_required": false,
+  "target_commit_sha": "d9231ddcbf7c0e725500318ee3c824b20dbd4682",
+  "target_tree_sha": "117e3b24d466c41bb6e2e507ed72744d22b79d13",
+  "tree_assertion": {
+    "expected": "117e3b24d466c41bb6e2e507ed72744d22b79d13",
+    "match": true,
+    "method": "authenticated-heimdall-git-bundle-exact-parent-and-gate-tree",
+    "observed": "117e3b24d466c41bb6e2e507ed72744d22b79d13"
+  },
+  "validation_profile": "syntax-v1"
+}

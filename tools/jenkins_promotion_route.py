@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 
+from ansible_receipt_gate import RECEIPT_PATH, VERSIONED_RECEIPTS, versioned_receipt_path
 from promotion_route import OID, PreflightError, Repository, RouteConflict
 
 
@@ -179,6 +180,43 @@ def require_reconciliation_pins(manifest, refs, head):
             raise RouteUnavailable('reconciliation-unreviewed-guard-files')
 
 
+def require_reconciliation_candidate(manifest, head):
+    """Bind the final source tree to reviewed code plus exact metadata paths.
+
+    The owner-signed manifest binds the complete reviewed source tree. Only this
+    PR's manifest and the Ansible receipt may differ in the final candidate.
+    Receipt authenticity remains the responsibility of the independent Ansible
+    gate; this check never treats an allowed path as an accepted receipt.
+    """
+    manifest_path = f"{MANIFEST_DIR}/{MANIFEST_NAME.format(pr=manifest['pr'])}"
+    diff = git('diff', '--no-ext-diff', '--no-textconv', '--no-renames',
+               '--ignore-submodules=none', '--name-only', '-z',
+               manifest['reviewed_head'], head, '--')
+    changed = set(filter(None, diff.split('\0')))
+    receipt_path = RECEIPT_PATH
+    if any(path.startswith(f'{VERSIONED_RECEIPTS}/') for path in changed):
+        parents = git('rev-list', '--parents', '-n', '1', head).split()
+        if len(parents) != 2 or parents[0] != head or not OID.fullmatch(parents[1]):
+            raise RouteUnavailable('reconciliation-receipt-parent-invalid')
+        receipt_path = versioned_receipt_path(parents[1])
+        if receipt_path not in changed or git('ls-tree', '-z', parents[1], '--', receipt_path):
+            raise RouteUnavailable('reconciliation-receipt-not-new-for-parent')
+    allowed = {manifest_path, receipt_path}
+    if not changed <= allowed:
+        raise RouteUnavailable('reconciliation-unreviewed-candidate-files')
+    # Read Git objects, not checkout paths. Both metadata files must remain
+    # regular, non-executable blobs; deletion, symlinks and gitlinks fail closed.
+    for path in sorted(allowed):
+        entry = git('ls-tree', '-z', head, '--', path)
+        if re.fullmatch(r'100644 blob [0-9a-f]{40}\t' + re.escape(path) + r'\x00',
+                        entry) is None:
+            raise RouteUnavailable('reconciliation-candidate-metadata-not-regular')
+    candidate_tree = git('rev-parse', f'{head}^{{tree}}').strip()
+    if not OID.fullmatch(candidate_tree):
+        raise RouteUnavailable('reconciliation-candidate-tree-unavailable')
+    return candidate_tree
+
+
 def plan_reconciliation(path, inputs, expected_reviewed_tree=None):
     """Model the two named target-based drafts, never mark a direct squash clean."""
     repo = Repository(os.fspath(path))
@@ -235,8 +273,20 @@ def check(source, reviewed_head, reconcile=False, actions_change_id=None, action
             raise RouteUnavailable('checkout-does-not-match-live-base')
     git('fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', 'origin', *refs)
 
-    manifest = None
-    if reconcile:
+    args = [sys.executable, '-B', str(ROUTE), '--fix-head', head]
+    for name in BRANCHES:
+        args.extend(('--' + name, pins[prefix + name]))
+    run = subprocess.run(args, capture_output=True, text=True, timeout=240)
+    report = json.loads(run.stdout)
+    if report.get('merge_authorized') is not False or report.get('exit_code') != run.returncode:
+        raise RouteUnavailable('invalid-route-report')
+    if live(refs) != pins:
+        raise RouteUnavailable('live-refs-changed-during-route-check')
+
+    failed = report.get('phases', [])[-1:]
+    if (reconcile and run.returncode == 1 and failed
+            and failed[0].get('lane') == 'development-to-staging'
+            and failed[0].get('conflict_paths')):
         if reviewed_head is not None:
             pr = '' if manifest_pr is None else str(manifest_pr)
             trusted_pr = '' if actions_change_id is None else str(actions_change_id)
@@ -264,27 +314,17 @@ def check(source, reviewed_head, reconcile=False, actions_change_id=None, action
         if ancestry.returncode != 0:
             raise RouteUnavailable('manifest-reviewed-head-not-in-source')
         require_reconciliation_pins(manifest, pins, reviewed_source)
-
-    args = [sys.executable, '-B', str(ROUTE), '--fix-head', head]
-    for name in BRANCHES:
-        args.extend(('--' + name, pins[prefix + name]))
-    run = subprocess.run(args, capture_output=True, text=True, timeout=240)
-    report = json.loads(run.stdout)
-    if report.get('merge_authorized') is not False or report.get('exit_code') != run.returncode:
-        raise RouteUnavailable('invalid-route-report')
-    if live(refs) != pins:
-        raise RouteUnavailable('live-refs-changed-during-route-check')
-    if manifest is not None:
-        failed = report.get('phases', [])[-1:]
-        if (run.returncode != 1 or not failed or failed[0].get('lane') != 'development-to-staging'
-                or failed[0].get('conflict_paths') != manifest['conflict_paths']):
+        if failed[0]['conflict_paths'] != manifest['conflict_paths']:
             raise RouteUnavailable('unrecognized-direct-route-conflict')
-        inputs = dict(manifest['bases'], fix_head=manifest['reviewed_head'])
-        planned = plan_reconciliation('.', inputs, manifest['reviewed_tree'])
+        candidate_tree = require_reconciliation_candidate(manifest, head)
+        inputs = dict(manifest['bases'], fix_head=head)
+        planned = plan_reconciliation('.', inputs, candidate_tree)
         if live(refs) != pins:
             raise RouteUnavailable('live-refs-changed-during-route-check')
         return dict(planned, direct_route=report, manifest_pr=manifest['pr'],
                     manifest_reviewed_head=manifest['reviewed_head'],
+                    manifest_reviewed_tree=manifest['reviewed_tree'],
+                    candidate_head=head, candidate_tree=candidate_tree,
                     run_id=manifest['run_id'])
     if run.returncode == 0:
         expected = ['fix-to-development', 'development-to-staging', 'staging-to-main']

@@ -757,9 +757,9 @@ class JenkinsBoundaries(unittest.TestCase):
         reviewed = {
             'check-promotion-candidate.yml': '2192483f591dd4f587eba81bc99c84fdd9b0578f18db0365ddbc3255c328ef3a',
             'jenkins-observer.yml': 'c228368c3ce269964eca70739ab10b2ccfd6f0e28367d24e942084f8d28322be',
-            'prepare-staging-draft.yml': '61a6c891b01a3d1efad1d590610eb3cab3731871cb536bad071c19448e456d2f',
+            'prepare-staging-draft.yml': '1cd4962b0c1e2c41197d79fa0acbd07fd35825911a641de16b1bb3e775dc7f26',
             'promotion-route-preflight.yml': '96332ab904393044443589a67569979a283a6076f0010cbd0cf5c71261517205',
-            'publish-ansible-check.yml': '28e73414e4e202c9aea34c5f0470d97d7b42e9ea48b12ba73ac0afd7e2bb03be',
+            'publish-ansible-check.yml': '50350767e9bb71a66a95647486c25a7912c1badf09e081eb83cf468a3ad48352',
             'staging-draft-merge-trigger.yml': '904d30bc54ac515e11e659c4e8c630428950a1c6c43d2f75ee336b79c6ad3f5c',
         }
         self.assertEqual(sorted(path.name for path in workflows.iterdir()), sorted(reviewed))
@@ -814,6 +814,29 @@ class JenkinsBoundaries(unittest.TestCase):
         self.assertIn('origin/${source_branch}^{tree}',provenance)
         self.assertIn('require_one_time_sync "$head" staging',provenance)
         self.assertIn('require_one_time_sync "$head" main',provenance)
+
+    def test_reviewed_reconciliation_lanes_use_scoped_syncs(self):
+        provenance = self.pipeline.split("stage('Provenance')", 1)[1].split("stage('Contract')", 1)[0]
+        for branch, target, target_base, source, source_parent in (
+            ('sync/development-to-staging-post-pr255-20261127', 'staging',
+             'e5b1d84b2c7f8de69016b56a94a2a24116201c71', 'development',
+             'bab5a1b16d3695779bc0fcca9baef32f537d9003'),
+            ('sync/development-to-staging-post-pr258-20261127', 'staging',
+             'e5b1d84b2c7f8de69016b56a94a2a24116201c71', 'development',
+             '3911109caf1a8389a5bba29c241bbccce5183cd3'),
+            ('sync/staging-to-main-post-pr255-20261127', 'main',
+             '57bec7ffc5aa4baf87dfbf333d3b087c5b2befea', 'staging',
+             'e5b1d84b2c7f8de69016b56a94a2a24116201c71'),
+            ('sync/development-to-staging-receipt-layout-20261128', 'staging',
+             '7d440cbddd17c2fd3e0847609ce0282ed0845c9d', 'development',
+             'eac056ce9a5ab940bc23e98dea3651b58ba70ea2'),
+            ('sync/staging-to-main-receipt-layout-20261128', 'main',
+             'dfd4b7e9d9a0f0b7fe4cec05fe893d8153c78daa', 'staging',
+             '7d440cbddd17c2fd3e0847609ce0282ed0845c9d'),
+        ):
+            block = provenance.split(f'elif [ "$source" = "{branch}" ]; then', 1)[1].split('else', 1)[0]
+            self.assertIn(f'require_scoped_sync "$head" {target} {target_base}', block)
+            self.assertIn(f'{source} {source_parent}', block)
 
     def test_development_is_plan_only(self):
         plan=self.pipeline.split("stage('Plan')",1)[1].split("stage('Validate')",1)[0]
