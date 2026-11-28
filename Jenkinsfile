@@ -245,6 +245,9 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-post-pr255-20261127" ]; then
                     require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
                       development bab5a1b16d3695779bc0fcca9baef32f537d9003
+                  elif [ "$source" = "sync/development-to-staging-post-pr258-20261127" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development 3911109caf1a8389a5bba29c241bbccce5183cd3
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
