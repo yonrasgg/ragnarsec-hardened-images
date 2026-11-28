@@ -1,0 +1,80 @@
+name: Prepare the main promotion draft
+
+# The staging notification supplies only GitHub event metadata. The protected
+# main revision verifies the staging squash, current refs and ordinary route.
+"on":
+  workflow_run:
+    workflows: ["Staging promotion notification"]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: prepare-main-draft
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: >-
+      github.repository == 'yonrasgg/ragnarsec-hardened-images' &&
+      github.ref == 'refs/heads/main' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'staging' &&
+      github.event.workflow_run.head_repository.id == 1426336836 &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - name: Check out protected main policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        name: Verify the staging squash and simulate the main promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B tools/prepare_main_draft.py
+
+  create-draft:
+    needs: preflight
+    if: >-
+      needs.preflight.outputs.plan != '' &&
+      vars.RAGNARSEC_CREATE_MAIN_DRAFTS == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: ansible-ci
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    steps:
+      - name: Check out the same protected policy
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Mint a repository-scoped draft token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: '5929884'
+          private-key: ${{ secrets.RAGNARSEC_ANSIBLE_PROTECTED_APP_PRIVATE_KEY }}
+          owner: yonrasgg
+          repositories: ragnarsec-hardened-images
+          permission-pull-requests: write
+      - name: Recheck live inputs and open only the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAIN_DRAFT_TOKEN: ${{ steps.app-token.outputs.token }}
+          CREATE_MAIN_DRAFTS: ${{ vars.RAGNARSEC_CREATE_MAIN_DRAFTS }}
+          PLAN: ${{ needs.preflight.outputs.plan }}
+        run: python3 -B tools/prepare_main_draft.py --create-plan "$PLAN"

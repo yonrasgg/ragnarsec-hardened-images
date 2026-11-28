@@ -827,6 +827,12 @@ class JenkinsBoundaries(unittest.TestCase):
             ('sync/staging-to-main-post-pr255-20261127', 'main',
              '57bec7ffc5aa4baf87dfbf333d3b087c5b2befea', 'staging',
              'e5b1d84b2c7f8de69016b56a94a2a24116201c71'),
+            ('sync/development-to-staging-receipt-layout-20261128', 'staging',
+             '7d440cbddd17c2fd3e0847609ce0282ed0845c9d', 'development',
+             'eac056ce9a5ab940bc23e98dea3651b58ba70ea2'),
+            ('sync/staging-to-main-receipt-layout-20261128', 'main',
+             'dfd4b7e9d9a0f0b7fe4cec05fe893d8153c78daa', 'staging',
+             '7d440cbddd17c2fd3e0847609ce0282ed0845c9d'),
         ):
             block = provenance.split(f'elif [ "$source" = "{branch}" ]; then', 1)[1].split('else', 1)[0]
             self.assertIn(f'require_scoped_sync "$head" {target} {target_base}', block)
