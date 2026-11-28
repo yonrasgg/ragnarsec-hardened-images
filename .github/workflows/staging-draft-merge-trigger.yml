@@ -1,0 +1,48 @@
+name: Staging draft merge trigger
+
+# Trust boundary (CI-004 corrective draft, 2026-11-26):
+#   * This is the UNTRUSTED half of the split. It runs on an ordinary
+#     `pull_request:[closed]` event in the untrusted PR context. It has no
+#     secrets, no App token and no write scope; it never checks out or executes
+#     PR code. Its sole purpose is to emit a GitHub-signed `workflow_run`
+#     completion event that the protected draft workflow consumes.
+#   * It produces NO outputs that the privileged workflow trusts. The draft
+#     workflow re-derives the PR number from GitHub-populated workflow_run
+#     metadata and re-validates the whole PR through the read-only API.
+#   * This file must stay free of the App token and of any write permission;
+#     adding either here would put a credential in PR-controlled context.
+"on":
+  pull_request:
+    branches: [development]
+    types: [closed]
+
+permissions: {}
+
+concurrency:
+  group: staging-draft-merge-trigger
+  cancel-in-progress: false
+
+jobs:
+  note-merge:
+    if: >-
+      github.repository == 'yonrasgg/ragnarsec-hardened-images' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'development' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Validate event data only (no checkout, no secrets, no outputs)
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$HEAD_REF" =~ ^fix/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]{0,9}$ ]]
+          printf 'merge-noted pr=%s head=%s base=%s\n' "$PR_NUMBER" "$HEAD_SHA" "$BASE_SHA"

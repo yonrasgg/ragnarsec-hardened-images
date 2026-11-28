@@ -236,6 +236,18 @@ pipeline {
                   elif [ "$source" = "sync/development-to-staging-o1-ds007-final-20261125" ]; then
                     require_scoped_sync "$head" staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e \
                       development 5699b18d1a3b599cb27a7783702f0912c4947ffe
+                  elif [ "$source" = "sync/development-to-staging-manifest-aware-20261126" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development 0e2cf0a1121647a50ba8676270ac16231ad5c555
+                  elif [ "$source" = "sync/development-to-staging-wgdashboard-20261127" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development 5207978c8f529e8ca123c1af104538446bd17ed5
+                  elif [ "$source" = "sync/development-to-staging-post-pr255-20261127" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development bab5a1b16d3695779bc0fcca9baef32f537d9003
+                  elif [ "$source" = "sync/development-to-staging-post-pr258-20261127" ]; then
+                    require_scoped_sync "$head" staging e5b1d84b2c7f8de69016b56a94a2a24116201c71 \
+                      development 3911109caf1a8389a5bba29c241bbccce5183cd3
                   else
                     echo 'STOP: staging accepts development or the one-time exact-tree sync.' >&2
                     exit 2
@@ -268,6 +280,12 @@ pipeline {
                   elif [ "$source" = "sync/staging-to-main-o1-ds007-final-20261125" ]; then
                     require_scoped_sync "$head" main 6abfb7aed7287c43a920427c170d26b8e4dfe76d \
                       staging 6421e1b72b11dabe68c0bd3759885989fe81ee8e
+                  elif [ "$source" = "sync/staging-to-main-manifest-aware-20261126" ]; then
+                    require_scoped_sync "$head" main 57bec7ffc5aa4baf87dfbf333d3b087c5b2befea \
+                      staging e5b1d84b2c7f8de69016b56a94a2a24116201c71
+                  elif [ "$source" = "sync/staging-to-main-post-pr255-20261127" ]; then
+                    require_scoped_sync "$head" main 57bec7ffc5aa4baf87dfbf333d3b087c5b2befea \
+                      staging e5b1d84b2c7f8de69016b56a94a2a24116201c71
                   else
                     echo 'STOP: main accepts staging or the one-time exact-tree sync.' >&2
                     exit 2
@@ -316,26 +334,27 @@ pipeline {
         when { expression { env.CHANGE_TARGET == 'development' } }
         steps {
           dir('ci-route') { deleteDir() }
+          // Historical reconciliation aliases, frozen as documentation only.
+          // Admission comes from the owner-signed PR manifest; this list is NOT an allowlist.
+          // 'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'
+          // 'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'
+          // 'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'
+          // 'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'
+          // 'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'
+          // 'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'
+          // 'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125'
+          // 'ragnarsec-hardened-images/PR-219:219:fix/o1-ds007-main-lane-repin-20261125'
+          // 'ragnarsec-hardened-images/PR-222:222:fix/o1-ds007-staging-lane-repin-20261125'
+          // 'ragnarsec-hardened-images/PR-224:224:fix/o1-ds007-lane-pins-final-20261125'
+          // 'ragnarsec-hardened-images/PR-215:215:fix/promotion-candidate-evaluator-20261125'
+          // 'ragnarsec-hardened-images/PR-233:233:fix/repin-unblock-sync-lanes-20261125'
+          // 'ragnarsec-hardened-images/PR-236:236:fix/ansible-check-publisher-20261126'
+          // 'ragnarsec-hardened-images/PR-238:238:fix/actions-reconciliation-preflight-20261126'
           sh '''
             set -euo pipefail
             mkdir -m 700 ci-route
-            set -- --source "$CHANGE_BRANCH"
-            case "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH" in
-              'ragnarsec-hardened-images/PR-164:164:fix/automated-promotion-preflight'|\
-              'ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout'|\
-              'ragnarsec-hardened-images/PR-204:204:fix/scanopy-image-catalog-20261125'|\
-              'ragnarsec-hardened-images/PR-203:203:fix/wgdashboard-o1-native-https'|\
-              'ragnarsec-hardened-images/PR-207:207:fix/scanopy-sync-lanes-20261125'|\
-              'ragnarsec-hardened-images/PR-210:210:fix/wgdashboard-o1-ds007'|\
-              'ragnarsec-hardened-images/PR-214:214:fix/o1-ds007-promotion-lanes-20261125'|\
-              'ragnarsec-hardened-images/PR-219:219:fix/o1-ds007-main-lane-repin-20261125'|\
-              'ragnarsec-hardened-images/PR-222:222:fix/o1-ds007-staging-lane-repin-20261125'|\
-              'ragnarsec-hardened-images/PR-224:224:fix/o1-ds007-lane-pins-final-20261125'|\
-              'ragnarsec-hardened-images/PR-215:215:fix/promotion-candidate-evaluator-20261125'|\
-              'ragnarsec-hardened-images/PR-233:233:fix/repin-unblock-sync-lanes-20261125')
-                set -- "$@" --approved-reconciliation
-                ;;
-            esac
+            set -- --source "$CHANGE_BRANCH" --pr "$CHANGE_ID" \
+              --allow-manifest-reconciliation
             python3 tools/jenkins_promotion_route.py "$@" | tee ci-route/promotion-route.json
           '''
         }
