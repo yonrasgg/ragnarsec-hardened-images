@@ -1,19 +1,44 @@
 from copy import deepcopy
+import io
+import json
+import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from ansible_receipt_gate import GIT_TREE_SCHEMA, git_tree_sha, reviewed_tree_sha
 from prepare_staging_draft import (
-    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft,
+    Correct, Hold, OPEN_DRAFTS, REPO, REPO_ID, create_once, fingerprint, plan_draft, receipt_binding, run,
 )
 
 
 class StagingDraftTests(unittest.TestCase):
     def setUp(self):
         self.fix, self.prior, self.dev, self.staging, self.tree = [c * 40 for c in 'abcde']
-        self.name, self.app = 'ansible/validate', 1234
+        self.reviewed_parent = '6' * 40  # parent of the fix head; receipt binds here
+        self.name, self.app = 'ansible/validate', 5929884
+        self.receipt_sha = 'f' * 64
+        self.receipt_ref = ('40-Evidence/Audits/change-validation/heimdall/'
+                            'run-ansible-syntax-15ab3d14/receipt.json')
+        self.tree_entries = [
+            {'path': 'README.md', 'mode': '100644', 'type': 'blob', 'sha': 'a' * 40},
+            {'path': 'receipts', 'mode': '40000', 'type': 'tree', 'sha': 'b' * 40},
+        ]
+        self.reviewed_tree = reviewed_tree_sha(self.tree_entries)
+        self.receipt_text = '\n'.join((
+            'Tree-bound Ansible validation receipt verified.',
+            f'receipt_ref={self.receipt_ref}',
+            f'receipt_sha256={self.receipt_sha}',
+            f'target_tree_sha={self.reviewed_tree}',
+            f'head_tree_sha={self.tree}',
+            f'target_commit_sha={self.reviewed_parent}',
+            'verification_time=2026-11-26T00:00:00Z',
+            'result=pass',
+        ))
         self.repo = dict(id=REPO_ID, full_name=REPO)
         self.checks = f'commits/{self.fix}/check-runs?' + urlencode(
             dict(check_name=self.name, filter='latest', per_page=100))
@@ -26,15 +51,19 @@ class StagingDraftTests(unittest.TestCase):
             'git/ref/heads/staging': dict(object=dict(sha=self.staging)),
             f'commits/{self.dev}': dict(sha=self.dev, parents=[dict(sha=self.prior)], commit=dict(
                 tree=dict(sha=self.tree), verification=dict(verified=True, reason='valid'))),
-            f'git/commits/{self.fix}': dict(tree=dict(sha=self.tree)),
+            f'git/commits/{self.fix}': dict(tree=dict(sha=self.tree),
+                                            parents=[dict(sha=self.reviewed_parent)]),
             f'git/commits/{self.staging}': dict(tree=dict(sha='2' * 40)),
+            f'git/trees/{self.tree}': dict(tree=self.tree_entries, truncated=False),
             'rules/branches/development': [dict(type='required_status_checks', parameters=dict(
                 strict_required_status_checks_policy=True,
                 required_status_checks=[dict(context=self.name, integration_id=self.app)]))],
             self.checks: dict(total_count=1, check_runs=[dict(
                 id=29, name=self.name, app=dict(id=self.app), head_sha=self.fix,
                 status='completed', conclusion='success', completed_at='2026-11-23T18:00:00Z',
-                output=dict(summary=f'pr=17;base={self.prior};head={self.fix}'))]),
+                external_id=self.receipt_sha,
+                output=dict(summary=f'pr=17;base={self.prior};head={self.fix}',
+                            text=self.receipt_text))]),
             OPEN_DRAFTS: [],
         }
         self.posts = []
@@ -76,6 +105,18 @@ class StagingDraftTests(unittest.TestCase):
         with self.assertRaisesRegex(Hold, 'ansible-not-required-by-github'):
             self.plan()
 
+    def test_required_check_with_another_app_id_is_rejected(self):
+        gate = self.data['rules/branches/development'][0]['parameters']['required_status_checks'][0]
+        gate['integration_id'] = self.app + 1
+        with self.assertRaisesRegex(Hold, 'ansible-not-required-by-github'):
+            self.plan()
+
+    def test_check_run_with_wrong_summary_is_rejected(self):
+        check = self.data[self.checks]['check_runs'][0]
+        check['output']['summary'] = f'pr=17;base={self.prior};head={"2" * 40}'
+        with self.assertRaisesRegex(Hold, 'ansible-check-not-bound-to-the-integrated-fix'):
+            self.plan()
+
     def test_failed_returns_to_new_fix_and_pending_does_not(self):
         check = self.data[self.checks]['check_runs'][0]
         check['conclusion'] = 'failure'
@@ -111,8 +152,163 @@ class StagingDraftTests(unittest.TestCase):
             self.create(plan)
         self.assertFalse(self.posts)
 
+    def test_missing_receipt_reference_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        for key in ('external_id',):
+            original = check.pop(key)
+            try:
+                with self.subTest(key=key):
+                    with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                        self.plan()
+            finally:
+                check[key] = original
+        original = check['output'].pop('text')
+        try:
+            with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                self.plan()
+        finally:
+            check['output']['text'] = original
+        self.assertFalse(self.posts)
+
+    def test_consumes_the_canonical_capture_reference_in_both_receipt_versions(self):
+        check = self.data[self.checks]['check_runs'][0]
+        reference = self.receipt_ref.replace('receipt.json', 'SHA256SUMS.captures')
+        check['output']['text'] = self.receipt_text.replace(self.receipt_ref, reference)
+        self.assertEqual(self.plan()['ansible_receipt_ref'], reference)
+
+        canonical = git_tree_sha(self.tree_entries, schema=GIT_TREE_SCHEMA)
+        reviewed = reviewed_tree_sha(self.tree_entries, schema=GIT_TREE_SCHEMA)
+        check['output']['text'] = check['output']['text'].replace(
+            f'head_tree_sha={self.tree}', f'head_tree_sha={canonical}').replace(
+            f'target_tree_sha={self.reviewed_tree}', f'target_tree_sha={reviewed}')
+        check['output']['text'] += f'\nreceipt_schema={GIT_TREE_SCHEMA}'
+        self.assertEqual(receipt_binding(check, canonical, self.tree_entries)['receipt_ref'], reference)
+        check['output']['text'] = check['output']['text'].replace(reference, self.receipt_ref)
+        self.assertIsNone(receipt_binding(check, canonical, self.tree_entries))
+
+    def test_invalid_receipt_hash_or_unallowlisted_ref_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        mutations = (
+            ('external_id', 'not-a-sha256'),
+            ('external_id', 'e' * 64),
+            ('text', self.receipt_text.replace(self.receipt_ref,
+                'tmp/leaked/' + self.receipt_ref.split('/')[-1])),
+        )
+        for key, value in mutations:
+            original = check['external_id'] if key == 'external_id' else check['output']['text']
+            with self.subTest(key=key, value=value[:24]):
+                if key == 'external_id':
+                    check['external_id'] = value
+                else:
+                    check['output']['text'] = value
+                with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                    self.plan()
+                if key == 'external_id':
+                    check['external_id'] = original
+                else:
+                    check['output']['text'] = original
+        self.assertFalse(self.posts)
+
+    def test_stale_or_tree_mismatched_receipt_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        stale_tree = '2' * 40
+        variants = (
+            self.receipt_text.replace(f'target_tree_sha={self.reviewed_tree}',
+                                      f'target_tree_sha={stale_tree}'),
+            self.receipt_text.replace(f'head_tree_sha={self.tree}',
+                                      f'head_tree_sha={stale_tree}'),
+            self.receipt_text.replace(f'receipt_sha256={self.receipt_sha}',
+                                      f'receipt_sha256={"9" * 64}'),
+        )
+        for text in variants:
+            original = check['output']['text']
+            with self.subTest(text=text[:60]):
+                check['output']['text'] = text
+                with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound'):
+                    self.plan()
+                check['output']['text'] = original
+        self.assertFalse(self.posts)
+
     def test_no_draft_before_fix_enters_development(self):
         self.data['pulls/17']['merged'] = False
         with self.assertRaisesRegex(Hold, 'not-an-integrated-fix'):
             self.plan()
         self.assertFalse(self.posts)
+
+    def test_wrong_reviewed_parent_binding_holds_the_draft(self):
+        check = self.data[self.checks]['check_runs'][0]
+        original = check['output']['text']
+        check['output']['text'] = original.replace(
+            f'target_commit_sha={self.reviewed_parent}', 'target_commit_sha=' + '7' * 40)
+        try:
+            with self.assertRaisesRegex(Hold, 'ansible-receipt-not-bound-to-reviewed-parent'):
+                self.plan()
+        finally:
+            check['output']['text'] = original
+        self.assertFalse(self.posts)
+
+    def test_fix_head_without_single_parent_holds_the_draft(self):
+        self.data[f'git/commits/{self.fix}']['parents'] = []
+        with self.assertRaisesRegex(Hold, 'ansible-head-parent-not-single'):
+            self.plan()
+        self.assertFalse(self.posts)
+
+    # --- CI-004 corrective: workflow_run event dispatch (new, not weakening) ---
+
+    def _run_with_workflow_run(self, event, integrated_pr, convention='workflow_run'):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'event.json'
+            path.write_text(json.dumps(event))
+            env = dict(GITHUB_REPOSITORY=REPO, GITHUB_EVENT_PATH=str(path),
+                       GITHUB_EVENT_NAME=convention, ANSIBLE_APP_ID=str(self.app),
+                       ANSIBLE_CHECK_NAME=self.name, GITHUB_OUTPUT=str(Path(tmp) / 'out'))
+            if integrated_pr is not None:
+                env['INTEGRATED_PR'] = integrated_pr
+            out = io.StringIO()
+            with patch.dict(os.environ, env, clear=True), \
+                 patch('sys.argv', ['prepare_staging_draft.py']), \
+                 patch('sys.stdout', out), \
+                 patch('prepare_staging_draft.api',
+                       side_effect=lambda method, p, body=None: self.get(p)):
+                rc = run()
+            return rc, json.loads(out.getvalue())
+
+    def _workflow_run_event(self, *, convention='pull_request', repo_id=REPO_ID):
+        return dict(workflow_run=dict(event=convention, conclusion='success',
+                                      head_repository=dict(id=repo_id),
+                                      pull_requests=[dict(number=17)]))
+
+    def test_workflow_run_plans_from_trusted_integrated_pr(self):
+        # A trusted workflow_run event with a validated INTEGRATED_PR produces
+        # exactly the same plan as the dispatch path; plan_draft re-validates
+        # all API facts before any draft can be created.
+        rc, report = self._run_with_workflow_run(self._workflow_run_event(), '17')
+        self.assertEqual(rc, 0)
+        self.assertEqual(report['result'], 'human-staging-draft-preflight')
+        self.assertEqual(report['pr'], 17)
+
+    def test_workflow_run_rejects_wrong_event_or_repo(self):
+        for event in (self._workflow_run_event(convention='push'),
+                      self._workflow_run_event(repo_id=1)):
+            with self.subTest(event=event):
+                rc, report = self._run_with_workflow_run(event, '17')
+                self.assertEqual(rc, 0)  # Hold on preflight is a no-op hold
+                self.assertEqual(report['result'], 'held')
+                self.assertEqual(report['reason'], 'ignored-event')
+
+    def test_workflow_run_rejects_missing_or_invalid_integrated_pr(self):
+        for value in (None, '', '0', 'abc', '17;drop', '1' * 11):
+            with self.subTest(value=value):
+                rc, report = self._run_with_workflow_run(self._workflow_run_event(), value)
+                self.assertEqual(rc, 0)
+                self.assertEqual(report['result'], 'held')
+                self.assertEqual(report['reason'], 'invalid-pr-number')
+
+    def test_legacy_pull_request_target_dispatch_is_removed(self):
+        # The dangerous branch is gone: the privileged PR-close event can no
+        # longer enable the credential-minting path in this tool.
+        event = dict(action='closed', pull_request=dict(merged=True), number=17)
+        rc, report = self._run_with_workflow_run(
+            event, '17', convention='pull_request_target')
+        self.assertEqual(rc, 0)
+        self.assertEqual(report, dict(result='held', reason='ignored-event'))
