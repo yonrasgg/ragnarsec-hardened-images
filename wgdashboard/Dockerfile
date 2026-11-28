@@ -7,6 +7,23 @@
 # proxy.golang.org. It stays covered by the scoped VEX in
 # vex/ragnarsec-wgdashboard.openvex.json.
 
+# Rebuild the v4.3.4 admin UI on the builder's native architecture.
+# Only the generated static files are copied into the runtime image.
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS dashboard-ui
+WORKDIR /frontend/app
+ADD --checksum=sha256:3e14da8d9e3ea94f4bb0c7e8c0f1fbf39a730d57dcc698235acf8427e662c394 \
+    https://codeload.github.com/WGDashboard/WGDashboard/tar.gz/0018a9b1e280f8a09a63d63d32866a56047d6570 \
+    /tmp/wgdashboard-source.tar.gz
+RUN tar -xzf /tmp/wgdashboard-source.tar.gz --strip-components=4 --no-same-owner \
+        WGDashboard-0018a9b1e280f8a09a63d63d32866a56047d6570/src/static/app \
+    && rm /tmp/wgdashboard-source.tar.gz
+COPY frontend/fetch.js src/utilities/fetch.js
+# The upstream lockfile also references a mirror. Preserve its integrity
+# hashes while fetching tarballs through the registry allowed by CI.
+RUN npm ci --ignore-scripts --no-audit --no-fund \
+    --registry=https://registry.npmjs.org/ --replace-registry-host=always
+RUN --network=none npm run build
+
 # Base digest is pinned and inherited across amd64/arm64. It is the same
 # multi-arch snapshot used by the release-25 lineage (EVD-PRJ-191).
 FROM ghcr.io/wgdashboard/wgdashboard@sha256:8c5b550db4fda04eff06e96af801499be485c73e0912fcf0c1031babca0f7e7b
@@ -41,7 +58,8 @@ RUN set -eu; \
     rm -rf "$VENV"/lib/python*/site-packages/setuptools/_vendor/jaraco.context-*.dist-info \
            "$VENV"/lib/python*/site-packages/setuptools/_vendor/wheel-*.dist-info; \
     "$VENV/bin/python" -m pip uninstall -y pip; \
-    /usr/local/bin/python3 -m pip uninstall -y pip
+    /usr/local/bin/python3 -m pip uninstall -y pip; \
+    rm -rf /opt/wgdashboard/src/static/dist/WGDashboardAdmin
 
 # Reviewed read-only guard and fail-closed keyless preflight. These four byte
 # inputs were exercised in the isolated rehearsal of EVD-PRJ-192; the diagnostic
@@ -51,6 +69,7 @@ COPY --chown=1000:1000 --chmod=0444 src/readonly_mode.py /opt/wgdashboard/src/re
 COPY --chown=1000:1000 --chmod=0444 src/readonly_preflight.py /opt/wgdashboard/src/readonly_preflight.py
 COPY --chown=1000:1000 --chmod=0555 docker/entrypoint.sh /entrypoint.sh
 COPY --chown=1000:1000 --chmod=0555 docker/healthcheck.sh /usr/local/bin/wgdashboard-healthcheck
+COPY --from=dashboard-ui --chown=1000:1000 /frontend/dist/WGDashboardAdmin/ /opt/wgdashboard/src/static/dist/WGDashboardAdmin/
 
 # TLS material is supplied at runtime as a read-only bind of
 # /run/secrets/wgdashboard/{server.crt,server.key,ca.crt} (0600, uid 1000).
