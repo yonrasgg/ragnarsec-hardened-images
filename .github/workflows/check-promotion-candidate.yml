@@ -1,7 +1,15 @@
 name: Check staging and main promotion candidates
 
+# Trust boundary (CI-004, post-migration):
+#   * Ordinary `pull_request` in this repository, read-only GITHUB_TOKEN, no
+#     secret is read; fork or non-standard routes fail closed inside the tool.
+#   * tools/promotion_candidate.py is read ONLY from the protected base checkout
+#     below. The `pull_request` default checkout (PR merge commit) is forbidden:
+#     the evaluator requires HEAD == base.sha == live protected target tip.
+#   * PR head/base SHAs and refs are event DATA consumed from GITHUB_EVENT_PATH;
+#     the candidate tree is simulated from fetched Git objects, never executed.
 "on":
-  pull_request_target:
+  pull_request:
     branches: [staging, main]
     types: [opened, reopened, synchronize, ready_for_review]
 
@@ -15,9 +23,13 @@ concurrency:
 jobs:
   verify-promotion:
     name: Verify exact promotion candidate (Actions)
+    if: github.repository == 'yonrasgg/ragnarsec-hardened-images'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
+      # Explicit protected-base checkout: without `ref`, `pull_request` checks
+      # out the PR merge commit and the evaluator blocks with
+      # trusted-checkout-must-be-the-exact-target.
       - name: Check out protected target policy, never PR code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
