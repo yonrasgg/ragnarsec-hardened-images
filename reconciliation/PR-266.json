@@ -1,0 +1,35 @@
+{
+  "bases": {
+    "development": "326546a32c000ed16abe78767152323770a9e232",
+    "main": "dfd4b7e9d9a0f0b7fe4cec05fe893d8153c78daa",
+    "staging": "2add4efdd48e1d579e47158928b9d0cde9bccd97"
+  },
+  "conflict_paths": [
+    ".github/tdd/rollout-promotion-candidate.md",
+    ".github/workflows/check-promotion-candidate.yml",
+    ".github/workflows/prepare-main-draft.yml",
+    "CONTRIBUTING.md",
+    "Jenkinsfile",
+    "README.md",
+    "receipts/ansible-validate.json",
+    "tests/test_public_ci.py",
+    "tests/test_public_jenkins_promotion_route.py",
+    "tests/test_public_prepare_main_draft.py",
+    "tests/test_public_promotion_candidate.py",
+    "tools/prepare_main_draft.py",
+    "tools/promotion_candidate.py"
+  ],
+  "guard_files": [
+    ".github/workflows/check-promotion-candidate.yml",
+    "tests/test_public_ci.py",
+    "tools/verify_protected_promotion.sh"
+  ],
+  "parent": "326546a32c000ed16abe78767152323770a9e232",
+  "pr": "266",
+  "reviewed_head": "236d1fb9c746ea1b4bdea220352ae375e1a47718",
+  "reviewed_tree": "213ee2aeb9f9a9f841851fd95cf2f05f34854bcb",
+  "run_id": "promotion-route-reconciliation-pr266-236d1fb9",
+  "schema_version": 1,
+  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgx64W+hzyYvq53wSS+Ax1PL3BPY\nyCBGmSXMD0AtWQgREAAAAlcmFnbmFyc2VjLXByb21vdGlvbi1yZWNvbmNpbGlhdGlvbi12\nMQAAAAAAAAAGc2hhNTEyAAAAUwAAAAtzc2gtZWQyNTUxOQAAAEBJ70FzNoKTfun6vvSR99\nlFwjdBzXxhIH6W44U+cO5RoQ8eQIum1O57mhHm3x6lJw4lECnOC6SnB4i8drTh3oUA\n-----END SSH SIGNATURE-----\n",
+  "source_branch": "fix/protected-promotion-policy-transition"
+}

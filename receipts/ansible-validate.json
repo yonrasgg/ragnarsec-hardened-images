@@ -12,12 +12,12 @@
         "/usr/bin/ansible-playbook",
         "--version"
       ],
-      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261128T173209Z-ansible-pr264-c1c2.oEWzHmOR/ansible-ci",
-      "finished_at": "2026-11-28T17:32:10Z",
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261128T190635Z-ansible-pr266-c1c2.3MDnhMAc/ansible-ci",
+      "finished_at": "2026-11-28T19:06:36Z",
       "id": "C1",
       "owner_gate": false,
       "rc": 0,
-      "started_at": "2026-11-28T17:32:09Z",
+      "started_at": "2026-11-28T19:06:36Z",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stdout_sha256": "3e0b76b1a6254cb780ea5220ae6719087f4a12ceba9b0a4dc15f67f2fcd40f8c",
       "sudo_required": false
@@ -27,37 +27,36 @@
         "/usr/bin/ansible-playbook",
         "--syntax-check",
         "-i",
-        "/home/userone/ragnarsec-optionc-pilot/20261128T173209Z-ansible-pr264-c1c2.oEWzHmOR/inputs/sandbox-inventory.template.ini",
-        "/home/userone/ragnarsec-optionc-pilot/20261128T173209Z-ansible-pr264-c1c2.oEWzHmOR/inputs/batch-all-services.yml",
+        "/home/userone/ragnarsec-optionc-pilot/20261128T190635Z-ansible-pr266-c1c2.3MDnhMAc/inputs/sandbox-inventory.template.ini",
+        "/home/userone/ragnarsec-optionc-pilot/20261128T190635Z-ansible-pr266-c1c2.3MDnhMAc/inputs/batch-all-services.yml",
         "-e",
-        "@/home/userone/ragnarsec-optionc-pilot/20261128T173209Z-ansible-pr264-c1c2.oEWzHmOR/inputs/batch-services-41.yml",
+        "@/home/userone/ragnarsec-optionc-pilot/20261128T190635Z-ansible-pr266-c1c2.3MDnhMAc/inputs/batch-services-41.yml",
         "-e",
         "batch_publish=false"
       ],
-      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261128T173209Z-ansible-pr264-c1c2.oEWzHmOR/ansible-ci",
-      "finished_at": "2026-11-28T17:32:11Z",
+      "cwd": "/home/userone/ragnarsec-optionc-pilot/20261128T190635Z-ansible-pr266-c1c2.3MDnhMAc/ansible-ci",
+      "finished_at": "2026-11-28T19:06:37Z",
       "id": "C2",
       "owner_gate": false,
       "rc": 0,
-      "started_at": "2026-11-28T17:32:10Z",
+      "started_at": "2026-11-28T19:06:36Z",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stdout_sha256": "f9ae55cd4248ff48376b63b5509fdb06635c6bb066373370cdd9325b30f3a63b",
+      "stdout_sha256": "cf28f455730fd15ee4ac513e39de539fd9c45e1a8fd797ad1edb5786b0945136",
       "sudo_required": false
     }
   ],
   "evidence_refs": [
-    "40-Evidence/Audits/change-validation/heimdall/20261128T173209Z-r2-syntax-ansible-ci-a0952108/SHA256SUMS.captures"
+    "40-Evidence/Audits/change-validation/heimdall/20261128T190636Z-r2-syntax-ansible-ci-28ccfce1/SHA256SUMS.captures"
   ],
   "host_id": "heimdall",
   "inventory_sha": "f2939ab3a79db96dc30fd2e116ac7a426ce315274609b741f1efee034151f1b3",
-  "observed_at": "2026-11-28T17:32:11Z",
-  "outputs_sha256": "0a5669ffdf070ddd700e82cdf78c263ce4ce76113e44654a6cb809c27c645dfd",
+  "observed_at": "2026-11-28T19:06:37Z",
+  "outputs_sha256": "dd1687cf882fb5b8745f079356a3ebfa7adc785e8ca0977ac879c306da260c64",
   "owner_gates": [],
   "playbook_sha": "c3a2f81f39eb75f4ad29e43b13cb97b4be27db5f1ab8107634df0459236069c4",
   "result": "pass",
-  "run_id": "20261128T173209Z-r2-syntax-ansible-ci-a0952108",
+  "run_id": "20261128T190636Z-r2-syntax-ansible-ci-28ccfce1",
   "schema": "ragnarsec.validation-receipt/1.1",
-  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABARa2mPPYSUzkVR/ueJxNlYQDm/wHU0pu1+0L1eO+Yaj\nN6PDLMH8vX0Ng46/nv2BYx9UCEWtdlIs35tLycymAsCw==\n-----END SSH SIGNATURE-----\n",
   "signer": {
     "identity": "heimdall:userone",
     "key_id": "heimdall-userone-pilot-ed25519",
@@ -65,13 +64,14 @@
     "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiv/sPquJD3nPifYbSsKvzBvT0fiH0SdCtJ0Qm0S3n6 ragnarsec-receipt-signer@heimdall\n"
   },
   "sudo_required": false,
-  "target_commit_sha": "a095210826348c5bf46b3fdf36abda4a1846063c",
-  "target_tree_sha": "e77bce21233484889849d5f4f439bd216c7a1a31",
+  "target_commit_sha": "28ccfce19317c236d251d6cb140e05869e79518d",
+  "target_tree_sha": "629fcd27b56f700fd707fcb5c78837175a87b809",
   "tree_assertion": {
-    "expected": "e77bce21233484889849d5f4f439bd216c7a1a31",
+    "expected": "629fcd27b56f700fd707fcb5c78837175a87b809",
     "match": true,
     "method": "authenticated-heimdall-git-bundle-exact-parent-and-gate-tree",
-    "observed": "e77bce21233484889849d5f4f439bd216c7a1a31"
+    "observed": "629fcd27b56f700fd707fcb5c78837175a87b809"
   },
-  "validation_profile": "syntax-v1"
+  "validation_profile": "syntax-v1",
+  "signature": "-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg2K/+w+q4kPec+J9htKwq/MG9PR\n+IfRJ0K0nRCbRLefoAAAAUcmFnbmFyc2VjLXJlY2VpcHQtdjEAAAAAAAAABnNoYTUxMgAA\nAFMAAAALc3NoLWVkMjU1MTkAAABA+OHyICAuvdDdnhQV5Ai0iP97M5U1PZUajWUHKRi4Dm\nS1KxaS5dz3uQFrjfSD+buCP1JCRpr5uf9YPAk8yshEAg==\n-----END SSH SIGNATURE-----\n"
 }
