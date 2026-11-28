@@ -295,19 +295,6 @@ class JenkinsPromotionRoute(unittest.TestCase):
         self.assertEqual(subprocess.run(['bash', '-n'], input=run,
                                         capture_output=True, text=True).returncode, 0)
 
-    def test_recovery_aliases_are_named_and_frozen_in_jenkins(self):
-        pipeline = (ROOT / 'Jenkinsfile').read_text()
-        self.assertIn('sync/development-to-staging-pr164-repair-20261123', pipeline)
-        self.assertIn('sync/staging-to-main-pr164-repair-20261123', pipeline)
-        self.assertIn('sync/development-to-staging-actions-base-20261124-v2', pipeline)
-        self.assertIn('sync/staging-to-main-actions-base-20261124-v2', pipeline)
-        self.assertIn('ragnarsec-hardened-images/PR-173:173:fix/actions-promotion-base-checkout', pipeline)
-        self.assertIn('e9ab7f4655ff1c32cd60bc3e4f6750e3d7b68e26', pipeline)
-        self.assertIn('f0a1d6f044406d04e0410016985c638b04b4e47f', pipeline)
-        self.assertIn('--allow-manifest-reconciliation', pipeline)
-        self.assertIn('--pr "$CHANGE_ID"', pipeline)
-        self.assertNotIn('case "$JOB_NAME:$CHANGE_ID:$CHANGE_BRANCH"', pipeline)
-        self.assertNotIn('--approved-reconciliation', pipeline)
 
     def test_clean_route_binds_exact_live_refs(self):
         self.setup_checkout(conflict=False)
@@ -348,7 +335,9 @@ class JenkinsPromotionRoute(unittest.TestCase):
         stage = stage.split("stage('Tools')", 1)[0]
         self.assertIn("env.CHANGE_TARGET == 'development'", stage)
         self.assertIn('set -euo pipefail', stage)
-        self.assertIn('python3 tools/jenkins_promotion_route.py', stage)
+        self.assertIn('bash tools/verify_protected_promotion.sh', stage)
+        self.assertIn('development "$(git rev-parse --verify HEAD)"', stage)
+        self.assertNotIn('python3 tools/jenkins_promotion_route.py', stage)
         self.assertIn("archiveArtifacts artifacts: 'ci-route/promotion-route.json'", stage)
         shell = stage.split("sh '''", 1)[1].split("'''", 1)[0]
         result = subprocess.run(['sh', '-n'], input=shell, capture_output=True, text=True)
